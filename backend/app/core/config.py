@@ -4,12 +4,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
     environment: Literal["development", "test", "production"] = "development"
     log_level: str = "INFO"
@@ -21,8 +21,12 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     # Provider credentials. Backend only: never serialised into an API response.
-    dhan_client_id: SecretStr | None = None
     dhan_access_token: SecretStr | None = None
+
+    @field_validator("dhan_access_token", mode="before")
+    @classmethod
+    def blank_credential_is_unset(cls, value: object) -> object:
+        return None if value == "" else value
 
 
 @lru_cache

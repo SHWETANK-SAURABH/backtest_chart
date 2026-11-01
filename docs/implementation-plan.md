@@ -63,7 +63,7 @@ All routes are under `/api/v1`.
 | --- | --- | --- |
 | System | `GET /health`, `GET /overview` | 1 |
 | Instruments | `GET /instruments` | 1 |
-| Market data | `GET /market-data/availability`, `POST /market-data/ingest`, `GET /market-data/health` | 2 |
+| Market data | `GET /market-data/availability`, `/datasets`, `/health`, `POST /market-data/ingest`, `GET /market-data/jobs`, `GET /market-data/jobs/{id}`, `POST /market-data/jobs/{id}/cancel`, `/resume` | 2 |
 | Strategies | `GET`/`POST /strategies`, `GET /strategies/{id}`, `POST /strategies/{id}/versions` | 3 |
 | Backtests | `POST`/`GET /backtests`, `GET /backtests/{id}`, `POST /backtests/{id}/cancel` | 4 |
 | Analytics | `GET /backtests/{id}/metrics`, `/trades`, `/equity`, `/daily`, `/decisions` | 5 |
@@ -73,7 +73,7 @@ All routes are under `/api/v1`.
 ## Development checklist
 
 - [x] Phase 1: Foundation
-- [ ] Phase 2: Historical data
+- [ ] Phase 2: Historical data (built and tested with mocks; awaiting a first real download, which needs a Dhan Data API token)
 - [ ] Phase 3: Strategy implementation (blocked: needs the Pine Script source)
 - [ ] Phase 4: Backtesting engine
 - [ ] Phase 5: Analytics
@@ -87,3 +87,5 @@ All routes are under `/api/v1`.
 - The Docker images have not been built or run yet. `docker compose config` validates, but the
   development machine's Docker daemon was not running.
 - Celery workers and Redis connectivity have not been exercised against a real Redis server.
+- No real candles have been downloaded yet. See the open questions in
+  [market-data.md](market-data.md).

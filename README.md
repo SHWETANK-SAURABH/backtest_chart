@@ -55,10 +55,16 @@ npm run dev
 Paths are for Windows. On Linux and macOS use `backend/.venv/bin/python`. Without Redis, the
 health endpoint correctly reports the system as degraded and background jobs cannot run.
 
+## Market data
+
+See [docs/market-data.md](docs/market-data.md) for provider verification, storage and quality
+checks. Downloads need `DHAN_ACCESS_TOKEN` in `.env`.
+
 ## Tests
 
 ```sh
 backend/.venv/Scripts/python -m pytest
+backend/.venv/Scripts/python -m pytest -m live_provider    # calls the real provider
 ```
 
 Integration tests use real PostgreSQL: `TEST_DATABASE_URL` if set, otherwise the embedded server
