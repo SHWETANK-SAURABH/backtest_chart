@@ -1,0 +1,89 @@
+# Implementation plan
+
+## Starting point
+
+Inspected at project start (2026-11-01):
+
+| Item | Finding |
+| --- | --- |
+| Existing code | None |
+| Pine Script source | **Not supplied.** Phase 3 cannot begin without it |
+| Provider credentials | None configured |
+| Historical NIFTY 50 data | None |
+
+## Architecture
+
+A modular monolith with three independently scalable processes: API server, ingestion worker and
+backtest worker. Each worker consumes its own Celery queue.
+
+```
+Next.js dashboard -> FastAPI -> PostgreSQL (configuration, jobs, results, provenance)
+                       |
+                     Redis -> ingestion worker -> provider adapters -> Parquet
+                           -> backtest worker  -> strategy -> engine -> results
+                                                  DuckDB queries over Parquet
+```
+
+Module dependencies point one way. The strategy module knows nothing about execution, the backtest
+engine knows nothing about reports, and AI dataset generation reads stored results rather than
+hooking into the engine.
+
+### Decisions
+
+| Decision | Reason |
+| --- | --- |
+| Synchronous SQLAlchemy with psycopg | Same data layer for the API and Celery. Heavy work runs in workers |
+| Double precision for prices and points | Stored values round-trip exactly with float64 engine results, so reproducibility hashes can be checked |
+| Timestamps stored in UTC, displayed in Asia/Kolkata | One internal convention, plus a stored exchange-local trading date |
+| Immutable, content-addressed candle files | A dataset version always resolves to the same bytes, even after later downloads |
+| Strategy version immutability in a database trigger | Holds regardless of which code path attempts the change |
+| Strategy-specific values stored as JSONB | Exact indicator fields come from the Pine Script and are not assumed here |
+
+## Database schema
+
+Created by migrations in `backend/alembic/versions`. Models are in `backend/app/database/models`.
+
+| Area | Tables |
+| --- | --- |
+| Market data | `instruments`, `data_providers`, `datasets`, `data_ingestion_jobs` |
+| Strategy | `strategies`, `strategy_versions` |
+| Backtest | `backtest_jobs`, `backtest_job_events`, `trades`, `strategy_decisions`, `market_context`, `backtest_metrics`, `equity_curve`, `daily_performance` |
+| Reporting | `generated_reports` |
+| AI datasets | `ai_datasets`, `ai_dataset_versions`, `dataset_exports` |
+
+`backtest_jobs` references the exact strategy version and the 5-minute and daily dataset versions,
+and stores execution settings and an input hash. Together these identify what produced each result.
+Referenced versions cannot be deleted (`ON DELETE RESTRICT`).
+
+## API structure
+
+All routes are under `/api/v1`.
+
+| Group | Endpoints | Phase |
+| --- | --- | --- |
+| System | `GET /health`, `GET /overview` | 1 |
+| Instruments | `GET /instruments` | 1 |
+| Market data | `GET /market-data/availability`, `POST /market-data/ingest`, `GET /market-data/health` | 2 |
+| Strategies | `GET`/`POST /strategies`, `GET /strategies/{id}`, `POST /strategies/{id}/versions` | 3 |
+| Backtests | `POST`/`GET /backtests`, `GET /backtests/{id}`, `POST /backtests/{id}/cancel` | 4 |
+| Analytics | `GET /backtests/{id}/metrics`, `/trades`, `/equity`, `/daily`, `/decisions` | 5 |
+| Reports | `POST`/`GET /backtests/{id}/reports` | 6 |
+| AI datasets | `POST /ai-datasets/generate`, `GET /ai-datasets`, `GET /ai-datasets/{id}`, `/validate`, `/exports` | 7 |
+
+## Development checklist
+
+- [x] Phase 1: Foundation
+- [ ] Phase 2: Historical data
+- [ ] Phase 3: Strategy implementation (blocked: needs the Pine Script source)
+- [ ] Phase 4: Backtesting engine
+- [ ] Phase 5: Analytics
+- [ ] Phase 6: Reporting
+- [ ] Phase 7: AI dataset pipeline
+- [ ] Phase 8: Frontend completion
+- [ ] Phase 9: Quality assurance
+
+## Known limitations
+
+- The Docker images have not been built or run yet. `docker compose config` validates, but the
+  development machine's Docker daemon was not running.
+- Celery workers and Redis connectivity have not been exercised against a real Redis server.

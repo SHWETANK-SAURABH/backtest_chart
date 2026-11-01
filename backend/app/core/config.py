@@ -1,0 +1,30 @@
+"""Environment-based application configuration."""
+
+from functools import lru_cache
+from pathlib import Path
+from typing import Literal
+
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    environment: Literal["development", "test", "production"] = "development"
+    log_level: str = "INFO"
+    log_json: bool = False
+
+    database_url: str = "postgresql+psycopg://nifty:change-me@localhost:5432/nifty_backtester"
+    redis_url: str = "redis://localhost:6379/0"
+    data_root: Path = Path("./data")
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+
+    # Provider credentials. Backend only: never serialised into an API response.
+    dhan_client_id: SecretStr | None = None
+    dhan_access_token: SecretStr | None = None
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
