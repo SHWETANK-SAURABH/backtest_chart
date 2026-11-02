@@ -2,23 +2,36 @@
 
 ## Provider verification
 
-Official documentation was read on 2026-11-01. "Not stated" means the pages read do not say.
+Official documentation was read on 2026-11-01 (Upstox again on 2026-11-02). "Not stated" means the
+pages read do not say.
 
-| Check | DhanHQ (implemented) | Zerodha Kite Connect | Upstox |
+| Check | Upstox (implemented) | DhanHQ (implemented) | Zerodha Kite Connect |
 | --- | --- | --- | --- |
-| NIFTY 50 spot identifier | `13`, segment `IDX_I`, type `INDEX` (read from the live security master) | Not stated; look up in the instrument list | Not stated; look up in the instrument files |
-| 5-minute candles | Yes | Yes (`5minute`) | Yes (`minutes/5`) |
-| Daily candles | Yes | Yes (`day`) | Yes (`days/1`) |
-| Maximum 5-minute range per request | 90 days | Not stated | 1 month |
-| 5-minute history depth | Last 5 years | Not stated ("several years") | From January 2022 |
-| Rate limit | 5 per second, 100,000 per day | 3 per second | 50 per second, 500 per minute, 2,000 per 30 minutes |
-| Timestamps | Epoch; timezone not stated | ISO 8601 with offset | ISO 8601 with offset |
-| Authentication | `access-token` header; 24-hour token | `Authorization` header; expires 6 AM next day | OAuth 2.0 bearer token; expiry not stated |
-| Cost | Paid Data API plan; price not stated | Not stated | Not stated |
+| NIFTY 50 spot identifier | `NSE_INDEX\|Nifty 50`, token 26000 (read from the live NSE instrument file) | `13`, segment `IDX_I`, type `INDEX` (read from the live security master) | Not stated; look up in the instrument list |
+| 5-minute candles | Yes (`minutes/5`) | Yes | Yes (`5minute`) |
+| Daily candles | Yes (`days/1`) | Yes | Yes (`day`) |
+| Maximum 5-minute range per request | 1 month (requests use 28 days) | 90 days | Not stated |
+| Maximum daily range per request | 1 decade | Not stated (requests use 365 days) | Not stated |
+| 5-minute history depth | From January 2022 | Last 5 years | Not stated ("several years") |
+| Rate limit | 50 per second, 500 per minute, 2,000 per 30 minutes (requests spaced 1 second apart) | 5 per second, 100,000 per day | 3 per second |
+| Timestamps | ISO 8601 with `+05:30` offset | Epoch; timezone not stated | ISO 8601 with offset |
+| Authentication | OAuth 2.0 bearer token, or "Generate" in the developer dashboard; expiry not stated | `access-token` header; 24-hour token | `Authorization` header; expires 6 AM next day |
+| Cost | Not stated | Paid Data API plan; price not stated | Not stated |
 
-Dhan was implemented first because its documentation gives the longest stated 5-minute history
-and the instrument can be verified from a public file. To add another provider, implement
-`MarketDataProvider` in `backend/app/data/providers` and register it in `registry.py`.
+Both Upstox and Dhan are implemented; set the token for the one you use (`UPSTOX_ACCESS_TOKEN` or
+`DHAN_ACCESS_TOKEN`). A backtest never mixes providers: the 5-minute and daily datasets must come
+from the same one. To add another provider, implement `MarketDataProvider` in
+`backend/app/data/providers` and register it in `registry.py`.
+
+## Open questions for the first live Upstox download
+
+| Question | Handling |
+| --- | --- |
+| Is `from_date` inclusive? | Not stated, so each request starts a day early; extra rows are dropped by the date filter |
+| Are candles newest-first or oldest-first? | Not guaranteed, so candles are sorted |
+| What does an error body look like? | Not documented for this endpoint; both a list of errors and a flat error object are read |
+| Does the index have meaningful volume? | Zero becomes null; `rows_with_volume` in the quality report records what was sent |
+| How long does a token last? | Not stated; generate a fresh one before downloading |
 
 ## Open questions for the first live Dhan download
 

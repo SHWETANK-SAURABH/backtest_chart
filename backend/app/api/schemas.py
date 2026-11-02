@@ -167,7 +167,8 @@ class BacktestCreate(BaseModel):
     strategy_version_id: uuid.UUID
     start_date: date
     end_date: date
-    provider: str = "dhan"
+    # Omitted: use the newest ready datasets, whichever provider supplied them.
+    provider: str | None = None
     intraday_dataset_id: uuid.UUID | None = None
     daily_dataset_id: uuid.UUID | None = None
     execution: ExecutionSettings = Field(default_factory=ExecutionSettings)

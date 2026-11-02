@@ -4,7 +4,7 @@ The prompt's 16 acceptance criteria, as of 2026-11-02.
 
 | # | Criterion | Status | Evidence or what remains |
 | --- | --- | --- | --- |
-| 1 | Retrieve genuine NIFTY 50 spot data from a verified provider | **Pending: needs a Dhan token** | DhanHQ adapter built and verified against its docs; NIFTY 50 resolved from Dhan's live instrument file (ID 13); real candles not yet downloaded |
+| 1 | Retrieve genuine NIFTY 50 spot data from a verified provider | **Pending: needs an Upstox (or Dhan) token** | Upstox and DhanHQ adapters built and verified against their docs; NIFTY 50 resolved from each provider's live instrument file (`NSE_INDEX\|Nifty 50`, Dhan ID 13); real candles not yet downloaded |
 | 2 | Store historical 5-minute candles | Built | Versioned Parquet storage, tested; awaits real data |
 | 3 | Retrieve supporting daily candles | Built | Same adapter; awaits real data |
 | 4 | Execute the Pine Script strategy port | Done | `backend/app/strategy`; owner's entry rules in `docs/strategy.md` |
@@ -26,16 +26,16 @@ and never written to the real database.
 
 ## Finishing the last two
 
-**Criterion 1.** Put a Dhan access token with an active Data API plan in `.env` as
-`DHAN_ACCESS_TOKEN`. Tokens last 24 hours. Then:
+**Criterion 1.** Put an Upstox access token in `.env` as `UPSTOX_ACCESS_TOKEN` (generate it at
+https://account.upstox.com/developer/apps just before use). Then:
 
 ```sh
 backend/.venv/Scripts/python -m pytest -m live_provider     # checks real candles against the quality rules
 ```
 
-and download data from the Historical data page. The docs leave the epoch timezone and index volume
-unstated; the first download answers both, and any surprise marks the dataset invalid rather than
-being accepted silently.
+and download data from the Historical data page. Upstox 5-minute history starts in January 2022.
+Anything the provider does differently from its documentation marks the dataset invalid rather
+than being accepted silently. Dhan works the same way with `DHAN_ACCESS_TOKEN`.
 
 **Criterion 5.** Export NIFTY 50 5-minute and daily charts from TradingView with the indicator
 applied and "Number of Pivots" raised (steps in `tests/strategy_parity/fixtures/README.md`), place

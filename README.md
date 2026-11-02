@@ -6,12 +6,12 @@ NIFTY 50 spot is an index value and cannot be traded directly, so results are th
 points, not rupee profit. There is no live trading or order execution.
 
 **Status:** all nine phases built. Two acceptance criteria wait on inputs: a real data download
-(needs a Dhan token) and the TradingView comparison (needs exports). See
+(needs an Upstox token) and the TradingView comparison (needs exports). See
 [docs/mvp-status.md](docs/mvp-status.md).
 
 ## What it does
 
-1. Downloads NIFTY 50 5-minute and daily candles from DhanHQ into immutable, versioned datasets with
+1. Downloads NIFTY 50 5-minute and daily candles from Upstox or DhanHQ into immutable, versioned datasets with
    quality reports.
 2. Runs the owner's Pine Script strategy, ported to Python, on every candle: BUY, SELL or HOLD, with
    the reasons.
@@ -27,7 +27,7 @@ points, not rupee profit. There is no live trading or order execution.
 ```
 Next.js dashboard -> FastAPI -> PostgreSQL (jobs, results, versions, provenance)
                        |
-                     Redis -> ingestion worker -> DhanHQ -> Parquet (DuckDB queries)
+                     Redis -> ingestion worker -> Upstox or DhanHQ -> Parquet (DuckDB queries)
                            -> backtest worker  -> strategy -> engine -> analytics
                                                   reports, AI datasets
 ```
@@ -47,7 +47,7 @@ Next.js dashboard -> FastAPI -> PostgreSQL (jobs, results, versions, provenance)
 ## Run with Docker
 
 ```sh
-cp .env.example .env    # set POSTGRES_PASSWORD, and DHAN_ACCESS_TOKEN to download data
+cp .env.example .env    # set POSTGRES_PASSWORD, and UPSTOX_ACCESS_TOKEN (or DHAN_ACCESS_TOKEN) to download data
 docker compose up --build
 ```
 
@@ -95,7 +95,7 @@ jobs cannot run; `scripts/run_ingestion.py` downloads data in-process instead.
 ```sh
 backend/.venv/Scripts/python -m pytest                       # 329 tests
 backend/.venv/Scripts/python -m pytest -m performance        # throughput on a year of candles
-backend/.venv/Scripts/python -m pytest -m live_provider      # real Dhan checks; needs a token
+backend/.venv/Scripts/python -m pytest -m live_provider      # real provider checks; needs a token
 backend/.venv/Scripts/python -m pytest tests/strategy_parity # TradingView comparison; needs exports
 ```
 

@@ -22,8 +22,9 @@ class Settings(BaseSettings):
 
     # Provider credentials. Backend only: never serialised into an API response.
     dhan_access_token: SecretStr | None = None
+    upstox_access_token: SecretStr | None = None
 
-    @field_validator("dhan_access_token", mode="before")
+    @field_validator("dhan_access_token", "upstox_access_token", mode="before")
     @classmethod
     def blank_credential_is_unset(cls, value: object) -> object:
         return None if value == "" else value

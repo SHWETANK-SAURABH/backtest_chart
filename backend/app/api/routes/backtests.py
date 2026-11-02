@@ -36,8 +36,12 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 
 def _dataset(
-    session: Session, dataset_id: uuid.UUID | None, provider_id: uuid.UUID, timeframe: Timeframe
+    session: Session,
+    dataset_id: uuid.UUID | None,
+    provider_id: uuid.UUID | None,
+    timeframe: Timeframe,
 ) -> Dataset:
+    """The given dataset, or the newest ready one (from `provider_id` when set)."""
     if dataset_id is not None:
         dataset = session.get(Dataset, dataset_id)
         if dataset is None or dataset.timeframe != timeframe.value:
@@ -45,16 +49,12 @@ def _dataset(
                 status.HTTP_422_UNPROCESSABLE_CONTENT, f"No {timeframe} dataset {dataset_id}"
             )
     else:
-        dataset = session.scalar(
-            select(Dataset)
-            .where(
-                Dataset.provider_id == provider_id,
-                Dataset.timeframe == timeframe.value,
-                Dataset.status == DatasetStatus.READY,
-            )
-            .order_by(Dataset.version.desc())
-            .limit(1)
+        query = select(Dataset).where(
+            Dataset.timeframe == timeframe.value, Dataset.status == DatasetStatus.READY
         )
+        if provider_id is not None:
+            query = query.where(Dataset.provider_id == provider_id)
+        dataset = session.scalar(query.order_by(Dataset.created_at.desc()).limit(1))
         if dataset is None:
             raise HTTPException(status.HTTP_409_CONFLICT, f"No ready {timeframe} dataset yet")
     if dataset.status != DatasetStatus.READY:
@@ -70,12 +70,22 @@ def create_backtest(request: BacktestCreate, session: SessionDep) -> BacktestJob
     version = session.get(StrategyVersion, request.strategy_version_id)
     if version is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Strategy version not found")
-    provider = session.scalar(select(DataProvider).where(DataProvider.code == request.provider))
-    if provider is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown provider")
+    provider_id = None
+    if request.provider is not None:
+        provider = session.scalar(select(DataProvider).where(DataProvider.code == request.provider))
+        if provider is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown provider")
+        provider_id = provider.id
 
-    intraday = _dataset(session, request.intraday_dataset_id, provider.id, Timeframe.M5)
-    daily = _dataset(session, request.daily_dataset_id, provider.id, Timeframe.D1)
+    # Without a provider, the newest ready 5-minute dataset decides it; daily data then comes
+    # from the same provider, so a backtest never mixes sources.
+    intraday = _dataset(session, request.intraday_dataset_id, provider_id, Timeframe.M5)
+    daily = _dataset(session, request.daily_dataset_id, intraday.provider_id, Timeframe.D1)
+    if daily.provider_id != intraday.provider_id:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "The 5-minute and daily datasets must come from the same provider",
+        )
     if (
         intraday.start_date is None
         or intraday.end_date is None
