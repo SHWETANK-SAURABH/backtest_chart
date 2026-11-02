@@ -55,6 +55,11 @@ npm run dev
 Paths are for Windows. On Linux and macOS use `backend/.venv/bin/python`. Without Redis, the
 health endpoint correctly reports the system as degraded and background jobs cannot run.
 
+## Dashboard
+
+Pages for backtests, the interactive strategy chart, trades, historical data, strategies, reports
+and AI datasets. See [docs/frontend.md](docs/frontend.md).
+
 ## Market data
 
 See [docs/market-data.md](docs/market-data.md) for provider verification, storage and quality

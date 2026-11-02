@@ -1,18 +1,33 @@
 @import "tailwindcss";
 
+/* Dark-only interface. Chart colours follow the validated reference palette's dark steps. */
 @theme {
-  --color-canvas: #0d1117;
-  --color-panel: #151b23;
-  --color-line: #2a313c;
-  --color-ink: #e6e9ee;
-  --color-muted: #8b949e;
-  --color-accent: #4c8dff;
-  --color-gain: #2fb67c;
-  --color-loss: #e5534b;
-  --color-warn: #d29922;
+  --color-canvas: #0d0d0d;
+  --color-panel: #1a1a19;
+  --color-raised: #232321;
+  --color-line: #2c2c2a;
+  --color-axis: #383835;
+  --color-ink: #f0efec;
+  --color-ink-2: #c3c2b7;
+  --color-muted: #898781;
+  --color-accent: #3987e5;
+  --color-gain: #3987e5;
+  --color-loss: #e66767;
+  --color-good: #0ca30c;
+  --color-warn: #fab219;
+  --color-critical: #d03b3b;
+}
+
+:root {
+  color-scheme: dark;
 }
 
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
 }

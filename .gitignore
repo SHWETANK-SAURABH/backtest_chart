@@ -29,3 +29,4 @@ next-env.d.ts
 .pgdata/
 data/
 *.log
+.playwright/

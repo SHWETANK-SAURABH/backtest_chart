@@ -79,7 +79,7 @@ All routes are under `/api/v1`.
 - [x] Phase 5: Analytics ([analytics.md](analytics.md))
 - [x] Phase 6: Reporting ([reporting.md](reporting.md))
 - [x] Phase 7: AI dataset pipeline ([ai-datasets.md](ai-datasets.md))
-- [ ] Phase 8: Frontend completion
+- [x] Phase 8: Frontend completion ([frontend.md](frontend.md))
 - [ ] Phase 9: Quality assurance
 
 ## Known limitations
