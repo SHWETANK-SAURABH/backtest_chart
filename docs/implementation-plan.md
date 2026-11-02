@@ -7,7 +7,7 @@ Inspected at project start (2026-11-01):
 | Item | Finding |
 | --- | --- |
 | Existing code | None |
-| Pine Script source | **Not supplied.** Phase 3 cannot begin without it |
+| Pine Script source | Supplied on 2026-11-02, kept outside version control |
 | Provider credentials | None configured |
 | Historical NIFTY 50 data | None |
 
@@ -64,7 +64,7 @@ All routes are under `/api/v1`.
 | System | `GET /health`, `GET /overview` | 1 |
 | Instruments | `GET /instruments` | 1 |
 | Market data | `GET /market-data/availability`, `/datasets`, `/health`, `POST /market-data/ingest`, `GET /market-data/jobs`, `GET /market-data/jobs/{id}`, `POST /market-data/jobs/{id}/cancel`, `/resume` | 2 |
-| Strategies | `GET`/`POST /strategies`, `GET /strategies/{id}`, `POST /strategies/{id}/versions` | 3 |
+| Strategies | `GET`/`POST /strategies`, `GET /strategies/{id}`, `POST /strategies/{id}/versions` (Pine source stored, not returned) | 3 |
 | Backtests | `POST`/`GET /backtests`, `GET /backtests/{id}`, `POST /backtests/{id}/cancel` | 4 |
 | Analytics | `GET /backtests/{id}/metrics`, `/trades`, `/equity`, `/daily`, `/decisions` | 5 |
 | Reports | `POST`/`GET /backtests/{id}/reports` | 6 |
@@ -74,7 +74,7 @@ All routes are under `/api/v1`.
 
 - [x] Phase 1: Foundation
 - [ ] Phase 2: Historical data (built and tested with mocks; awaiting a first real download, which needs a Dhan Data API token)
-- [ ] Phase 3: Strategy implementation (blocked: needs the Pine Script source)
+- [ ] Phase 3: Strategy implementation (built and tested; accuracy against TradingView awaits exports, see [strategy.md](strategy.md))
 - [ ] Phase 4: Backtesting engine
 - [ ] Phase 5: Analytics
 - [ ] Phase 6: Reporting
@@ -84,8 +84,5 @@ All routes are under `/api/v1`.
 
 ## Known limitations
 
-- The Docker images have not been built or run yet. `docker compose config` validates, but the
-  development machine's Docker daemon was not running.
-- Celery workers and Redis connectivity have not been exercised against a real Redis server.
 - No real candles have been downloaded yet. See the open questions in
   [market-data.md](market-data.md).

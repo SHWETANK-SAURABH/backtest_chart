@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Any, Literal, Self
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.candle import EXCHANGE_TIMEZONE
 from app.domain.enums import Timeframe
@@ -108,3 +108,54 @@ class ProviderHealth(BaseModel):
 class MarketDataHealthResponse(BaseModel):
     providers: list[ProviderHealth]
     datasets: list[DatasetResponse]
+
+
+class StrategyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    description: str | None = None
+
+
+class StrategyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    description: str | None
+    created_at: datetime
+
+
+class StrategyVersionCreate(BaseModel):
+    version: str = Field(pattern=r"^[0-9A-Za-z][0-9A-Za-z.\-]{0,31}$")
+    pine_source: str | None = None
+    pine_source_reference: str | None = Field(None, max_length=512)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    change_description: str | None = None
+
+    @model_validator(mode="after")
+    def require_source(self) -> Self:
+        if not self.pine_source and not self.pine_source_reference:
+            raise ValueError("Provide pine_source or pine_source_reference")
+        return self
+
+
+class StrategyVersionResponse(BaseModel):
+    """The Pine source itself is not returned; its hash identifies it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    strategy_id: uuid.UUID
+    version: str
+    pine_source_reference: str | None
+    pine_source_sha256: str | None = None
+    python_implementation_version: str
+    code_hash: str
+    parameters: dict[str, Any]
+    indicator_settings: dict[str, Any]
+    execution_settings: dict[str, Any]
+    change_description: str | None
+    created_at: datetime
+
+
+class StrategyDetailResponse(StrategyResponse):
+    versions: list[StrategyVersionResponse]
