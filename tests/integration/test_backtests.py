@@ -1,117 +1,27 @@
 """Full backtests on real PostgreSQL and Parquet, using clearly labelled synthetic candles."""
 
-from collections.abc import Iterator
-from datetime import date
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
-from app.backtesting.service import BacktestInputError, BacktestService, input_hash
-from app.backtesting.settings import ExecutionSettings, RiskSettings
-from app.data.ingestion.service import IngestionService
-from app.data.storage.candle_store import CandleStore
+from app.backtesting.service import BacktestInputError, BacktestService
+from app.backtesting.settings import ExecutionSettings
 from app.database.models import (
     BacktestJob,
     BacktestJobEvent,
-    DataIngestionJob,
-    DataProvider,
     Dataset,
-    Instrument,
     MarketContext,
-    Strategy,
     StrategyDecision,
     StrategyVersion,
     Trade,
 )
 from app.domain.enums import DatasetStatus, JobStatus
-from app.strategy.parameters import IMPLEMENTATION_VERSION, StrategyParameters
-from app.strategy.runner import code_hash
-from tests.support.mock_market_data import RandomWalkProvider
+from tests.support.backtests import END, START, make_job
 
 pytestmark = pytest.mark.integration
-
-START = date(2025, 6, 2)
-END = date(2025, 6, 27)
-
-
-@pytest.fixture
-def db(engine: Engine) -> Iterator[Session]:
-    with Session(engine, expire_on_commit=False) as session:
-        yield session
-    with Session(engine) as session:
-        for model in (
-            MarketContext, StrategyDecision, Trade, BacktestJobEvent, BacktestJob,
-            StrategyVersion, Strategy, Dataset, DataIngestionJob,
-        ):  # fmt: skip
-            session.execute(delete(model))
-        session.commit()
-
-
-@pytest.fixture
-def setup(db: Session, tmp_path: Path) -> dict:
-    """Ingest synthetic 5-minute and daily datasets, and register a strategy version."""
-    instrument_id = db.scalars(select(Instrument.id)).one()
-    provider_id = db.scalars(select(DataProvider.id).where(DataProvider.code == "dhan")).one()
-    store = CandleStore(tmp_path)
-    datasets = {}
-    for timeframe, start in (("5m", date(2025, 5, 20)), ("1d", date(2025, 4, 1))):
-        job = DataIngestionJob(
-            instrument_id=instrument_id,
-            provider_id=provider_id,
-            timeframe=timeframe,
-            start_date=start,
-            end_date=END,
-        )
-        db.add(job)
-        db.commit()
-        IngestionService(db, RandomWalkProvider(chunk_days=40), store).run(job.id)
-        datasets[timeframe] = db.scalars(
-            select(Dataset).where(Dataset.timeframe == timeframe)
-        ).one()
-        assert datasets[timeframe].status == DatasetStatus.READY
-
-    strategy = Strategy(name="MTZ Reversal test")
-    db.add(strategy)
-    db.flush()
-    version = StrategyVersion(
-        strategy_id=strategy.id,
-        version="1.0.0",
-        pine_source="// test only",
-        python_implementation_version=IMPLEMENTATION_VERSION,
-        code_hash=code_hash(),
-        parameters=StrategyParameters().model_dump(mode="json"),
-    )
-    db.add(version)
-    db.commit()
-    return {"store": store, "version": version, "instrument_id": instrument_id, **datasets}
-
-
-def make_job(db: Session, setup: dict, execution: ExecutionSettings | None = None) -> BacktestJob:
-    execution = execution or ExecutionSettings()
-    risk = RiskSettings()
-    job = BacktestJob(
-        strategy_version_id=setup["version"].id,
-        intraday_dataset_id=setup["5m"].id,
-        daily_dataset_id=setup["1d"].id,
-        instrument_id=setup["instrument_id"],
-        timeframe="5m",
-        start_date=START,
-        end_date=END,
-        execution_method=execution.method.value,
-        execution_settings=execution.model_dump(mode="json"),
-        risk_settings=risk.model_dump(mode="json"),
-        input_hash=input_hash(
-            setup["version"], setup["5m"], setup["1d"], START, END, execution, risk
-        ),
-    )
-    db.add(job)
-    db.commit()
-    return job
 
 
 def count(db: Session, model: type, job: BacktestJob) -> int:
@@ -256,7 +166,9 @@ def test_saved_metrics_agree_with_saved_trades(db: Session, setup: dict) -> None
     assert metrics.winning_trades == sum(1 for t in trades if t.net_points > 0)
     assert metrics.sharpe_assumptions["frequency"] == "daily"
     assert metrics.unit_summary["actual_monetary"]["value"] is None
-    assert sum(r["trades"] for r in metrics.by_market_condition["weekday"].values()) == len(trades)
+    for category, labels in metrics.by_market_condition.items():
+        if category != "setup":  # one trade can involve several patterns
+            assert sum(r["trades"] for r in labels.values()) == len(trades), category
 
     daily = db.scalars(
         select(DailyPerformance).where(DailyPerformance.backtest_job_id == job.id)

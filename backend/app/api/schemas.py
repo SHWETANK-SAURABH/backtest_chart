@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.backtesting.settings import CapitalAssumptions, ExecutionSettings, RiskSettings
 from app.domain.candle import EXCHANGE_TIMEZONE
-from app.domain.enums import Timeframe
+from app.domain.enums import ExportFormat, ReportCategory, Timeframe
 
 
 class ComponentHealth(BaseModel):
@@ -305,3 +305,33 @@ class DecisionResponse(BaseModel):
 class DecisionPage(BaseModel):
     total: int
     items: list[DecisionResponse]
+
+
+ReportFormat = Literal[ExportFormat.PDF, ExportFormat.CSV, ExportFormat.JSON, ExportFormat.PARQUET]
+
+
+class ReportCreate(BaseModel):
+    categories: list[ReportCategory] = Field(min_length=1)
+    formats: list[ReportFormat] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def unique(self) -> Self:
+        self.categories = list(dict.fromkeys(self.categories))
+        self.formats = list(dict.fromkeys(self.formats))
+        return self
+
+
+class ReportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    backtest_job_id: uuid.UUID
+    category: str
+    format: str
+    status: str
+    file_size_bytes: int | None
+    sha256: str | None
+    report_metadata: dict[str, Any]
+    error: str | None
+    created_at: datetime
+    generated_at: datetime | None
