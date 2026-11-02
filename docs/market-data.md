@@ -23,15 +23,34 @@ Both Upstox and Dhan are implemented; set the token for the one you use (`UPSTOX
 from the same one. To add another provider, implement `MarketDataProvider` in
 `backend/app/data/providers` and register it in `registry.py`.
 
-## Open questions for the first live Upstox download
+## What the first real Upstox download showed (2026-11-02)
 
-| Question | Handling |
-| --- | --- |
-| Is `from_date` inclusive? | Not stated, so each request starts a day early; extra rows are dropped by the date filter |
-| Are candles newest-first or oldest-first? | Not guaranteed, so candles are sorted |
-| What does an error body look like? | Not documented for this endpoint; both a list of errors and a flat error object are read |
-| Does the index have meaningful volume? | Zero becomes null; `rows_with_volume` in the quality report records what was sent |
-| How long does a token last? | Not stated; generate a fresh one before downloading |
+| Question | Answer from real data | Handling |
+| --- | --- | --- |
+| Is `from_date` inclusive? | Yes: the extra day requested was returned | Requests still start a day early; the date filter drops the extra rows |
+| Candle order | Newest first | Candles are sorted |
+| Index volume | Always 0 | Stored as null (unavailable), never as zero volume |
+| Error body | `{"status": "error", "errors": [{"errorCode", "message", ...}]}` | Read as documented in the adapter |
+| Profile endpoint | Refused for an extended token unless called from the account's static IP (`UDAPI1221`), while historical candles work | The connection check uses a small historical request instead |
+| Token validity | The owner's extended token is valid for a year | Nothing to regenerate daily |
+| Candles outside session hours | Yes, see below | Excluded and counted |
+
+### Reference prints outside the session
+
+From 24 March to 22 July 2022, Upstox returned two extra candles every session: a flat 09:10 candle at
+the pre-open auction price and a flat 15:30 candle at the official closing price (for example
+17,222.75 on 24 March 2022, matching the daily close, while the last traded 5-minute candle closed at
+17,197.30). On five days in April and May 2025 it returned flat 15:35 and 15:55 candles at the
+official close.
+
+These are not traded candles, and TradingView's NIFTY chart shows only the regular session, so they
+are left out of published 5-minute datasets (`ingestion/session_filter.py`). Each one is counted in
+the quality report (`excluded_outside_session_candles`, by time, with samples), and the provider's
+original payload keeps them. The official open and close stay in the daily candles. Dates with no
+scheduled session keep all their candles, and Diwali Muhurat sessions keep their evening candles.
+
+The first download, made before this filter existed, is kept as dataset version 1 with status
+`invalid`.
 
 ## Open questions for the first live Dhan download
 
@@ -78,7 +97,7 @@ Checks report problems and never change or remove data.
 | Invalid OHLC relationships or non-positive prices | Critical |
 | Duplicate timestamps, or repeats with conflicting values | Critical |
 | Timestamps off the 5-minute grid, or daily candles not at IST midnight | Critical |
-| Bars outside session hours on a scheduled date | Critical |
+| Bars outside session hours on a scheduled date, after reference prints are excluded | Critical |
 | Missing candles or whole sessions | Reported |
 | Data on a date with no scheduled session | Reported, data kept |
 | Dates beyond the calendar's holiday coverage | Reported |

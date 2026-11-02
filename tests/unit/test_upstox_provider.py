@@ -227,17 +227,31 @@ def test_token_is_not_in_error_messages() -> None:
     assert "test-token" not in str(caught.value)
 
 
-def test_validate_connection() -> None:
-    ok = provider(
-        lambda _: httpx.Response(200, json={"status": "success", "data": {"is_active": True}})
-    )[0]
-    assert ok.validate_connection().connected
-    inactive = provider(
-        lambda _: httpx.Response(200, json={"status": "success", "data": {"is_active": False}})
-    )[0]
-    assert "inactive" in inactive.validate_connection().detail
-    expired = provider(lambda _: error(401, "UDAPI100050"))[0]
-    assert expired.validate_connection().connected is False
+def test_validate_connection_uses_a_historical_request() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json=CANDLES)
+
+    status = provider(handler)[0].validate_connection()
+    assert status.connected
+    assert "historical data access confirmed" in status.detail
+    assert "/historical-candle/NSE_INDEX%7CNifty%2050/days/1/2026-06-15/2026-06-05" in seen["url"]
+    assert "profile" not in seen["url"]
+
+
+@pytest.mark.parametrize("code", ["UDAPI100050", "UDAPI1221"])
+def test_validate_connection_reports_refused_tokens(code: str) -> None:
+    status = provider(lambda _: error(401, code))[0].validate_connection()
+    assert status.connected is False
+    assert code in status.detail
+
+
+def test_validate_connection_rejects_an_unexpected_body() -> None:
+    body = {"status": "success"}
+    status = provider(lambda _: httpx.Response(200, json=body))[0].validate_connection()
+    assert status.connected is False
 
 
 def test_validate_connection_without_token_makes_no_request() -> None:

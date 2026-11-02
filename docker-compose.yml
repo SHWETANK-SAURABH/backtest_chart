@@ -5,8 +5,10 @@ x-backend: &backend
     DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     REDIS_URL: redis://redis:6379/0
     DATA_ROOT: /data
+  # Candle files, reports and datasets live in the project's data/ folder (not committed), so the
+  # services and local scripts share one copy.
   volumes:
-    - market_data:/data
+    - ./data:/data
   depends_on:
     postgres:
       condition: service_healthy
@@ -81,4 +83,3 @@ services:
 
 volumes:
   postgres_data:
-  market_data:

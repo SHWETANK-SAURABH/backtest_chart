@@ -3,7 +3,7 @@
 import gzip
 import json
 from collections.abc import Callable, Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -201,6 +201,45 @@ def test_empty_download_fails_rather_than_publishing_nothing(db: Session, tmp_pa
         service(db, tmp_path, provider).run(job.id)
     assert job.status == JobStatus.FAILED
     assert db.scalars(select(Dataset)).first() is None
+
+
+def test_reference_prints_outside_the_session_are_excluded_not_fatal(
+    db: Session, tmp_path: Path
+) -> None:
+    class PrintsProvider(MockProvider):
+        """Adds flat pre-open and closing-price candles, as Upstox did in 2022."""
+
+        def get_historical_candles(self, instrument, timeframe, start, end):
+            chunk = super().get_historical_candles(instrument, timeframe, start, end)
+            extra = []
+            for candle in chunk.candles:
+                local = candle.timestamp.astimezone(EXCHANGE_TZ)
+                if (local.hour, local.minute) == (9, 15):
+                    extra.append(
+                        candle.model_copy(
+                            update={"timestamp": candle.timestamp - timedelta(minutes=5)}
+                        )
+                    )
+                if (local.hour, local.minute) == (15, 25):
+                    extra.append(
+                        candle.model_copy(
+                            update={"timestamp": candle.timestamp + timedelta(minutes=5)}
+                        )
+                    )
+            chunk.candles.extend(extra)
+            return chunk
+
+    service(db, tmp_path, PrintsProvider()).run(make_job(db).id)
+    dataset = only_dataset(db)
+    sessions = dataset.row_count // 75
+    assert dataset.status == DatasetStatus.READY
+    assert dataset.row_count % 75 == 0
+    report = dataset.quality_report
+    assert report["outside_session_bars"] == 0
+    assert report["excluded_outside_session_candles"] == 2 * sessions
+    assert report["excluded_outside_session_by_time"] == {"09:10": sessions, "15:30": sessions}
+    # The provider's original payload, including the prints, is still kept.
+    assert list((tmp_path / "raw").rglob("*.json.gz"))
 
 
 def test_critical_data_problems_mark_the_dataset_invalid(db: Session, tmp_path: Path) -> None:
