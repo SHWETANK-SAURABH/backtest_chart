@@ -22,5 +22,10 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     task_default_queue=BACKTEST_QUEUE,
     task_routes={"app.workers.ingestion.*": {"queue": INGESTION_QUEUE}},
-    include=["app.workers.ingestion", "app.workers.backtest", "app.workers.reporting"],
+    include=[
+        "app.workers.ingestion",
+        "app.workers.backtest",
+        "app.workers.reporting",
+        "app.workers.datasets",
+    ],
 )

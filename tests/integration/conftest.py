@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.data.ingestion.service import IngestionService
 from app.data.storage.candle_store import CandleStore
 from app.database.models import (
+    AiDataset,
+    AiDatasetVersion,
     BacktestJob,
     BacktestJobEvent,
     BacktestMetrics,
@@ -19,6 +21,7 @@ from app.database.models import (
     DataIngestionJob,
     DataProvider,
     Dataset,
+    DatasetExport,
     EquityCurvePoint,
     GeneratedReport,
     Instrument,
@@ -36,7 +39,8 @@ from tests.support.mock_market_data import RandomWalkProvider
 
 # Deleted after each test, children first.
 CLEANUP_ORDER = (
-    GeneratedReport, MarketContext, StrategyDecision, Trade, EquityCurvePoint, DailyPerformance,
+    DatasetExport, AiDatasetVersion, AiDataset, GeneratedReport, MarketContext, StrategyDecision,
+    Trade, EquityCurvePoint, DailyPerformance,
     BacktestMetrics, BacktestJobEvent, BacktestJob, StrategyVersion, Strategy, Dataset,
     DataIngestionJob,
 )  # fmt: skip

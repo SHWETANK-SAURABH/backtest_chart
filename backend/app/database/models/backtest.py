@@ -116,6 +116,10 @@ class MarketContext(Base):
     ema_direction: Mapped[str | None] = mapped_column(String(16))
     market_structure: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
     market_regime: Mapped[str | None] = mapped_column(String(32))
+    session_open: Mapped[float | None] = mapped_column(Double)
+    condition_labels: Mapped[dict[str, Any]] = mapped_column(
+        nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
 
 
 class Trade(Base):

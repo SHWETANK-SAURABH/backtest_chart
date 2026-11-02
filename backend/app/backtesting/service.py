@@ -322,6 +322,8 @@ def _context_row(decision_id: int, decision: Decision) -> dict[str, Any]:
         "ema_direction": context.get("ema_slow_direction"),
         "market_structure": MARKET_STRUCTURE,
         "market_regime": regimes.regime(context, decision.timestamp),
+        "session_open": context.get("session_open"),
+        "condition_labels": regimes.labels(context, decision.timestamp),
     }
 
 

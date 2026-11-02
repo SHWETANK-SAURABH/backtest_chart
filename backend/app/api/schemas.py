@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.backtesting.settings import CapitalAssumptions, ExecutionSettings, RiskSettings
+from app.datasets.dataset_builder import DatasetParameters
 from app.domain.candle import EXCHANGE_TIMEZONE
 from app.domain.enums import ExportFormat, ReportCategory, Timeframe
 
@@ -319,6 +320,44 @@ class ReportCreate(BaseModel):
         self.categories = list(dict.fromkeys(self.categories))
         self.formats = list(dict.fromkeys(self.formats))
         return self
+
+
+class AiDatasetGenerate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    description: str | None = None
+    backtest_id: uuid.UUID
+    parameters: DatasetParameters = Field(default_factory=DatasetParameters)
+
+
+class AiDatasetVersionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    ai_dataset_id: uuid.UUID
+    dataset_name: str
+    version: str
+    backtest_job_id: uuid.UUID
+    generation_parameters: dict[str, Any]
+    content_hash: str | None
+    record_count: int
+    label_distribution: dict[str, Any]
+    split_statistics: dict[str, Any]
+    validation_report: dict[str, Any]
+    status: str
+    error: str | None
+    created_at: datetime
+
+
+class AiDatasetExportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    format: str
+    split: str
+    file_size_bytes: int
+    sha256: str
+    record_count: int
+    exported_at: datetime
 
 
 class ReportResponse(BaseModel):

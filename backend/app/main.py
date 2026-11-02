@@ -4,6 +4,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    ai_datasets,
     analytics,
     backtests,
     instruments,
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     api.include_router(backtests.router)
     api.include_router(analytics.router)
     api.include_router(reports.router)
+    api.include_router(ai_datasets.router)
     app.include_router(api)
     return app
 
