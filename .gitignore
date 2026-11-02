@@ -27,6 +27,7 @@ next-env.d.ts
 
 # Local runtime data
 .pgdata/
-data/
+# Root-level only: backend/app/data and frontend/app/data are source code.
+/data/
 *.log
 .playwright/
