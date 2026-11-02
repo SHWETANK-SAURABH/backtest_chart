@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.backtesting.settings import CapitalAssumptions, ExecutionSettings, RiskSettings
 from app.domain.candle import EXCHANGE_TIMEZONE
 from app.domain.enums import Timeframe
 
@@ -159,3 +160,49 @@ class StrategyVersionResponse(BaseModel):
 
 class StrategyDetailResponse(StrategyResponse):
     versions: list[StrategyVersionResponse]
+
+
+class BacktestCreate(BaseModel):
+    strategy_version_id: uuid.UUID
+    start_date: date
+    end_date: date
+    provider: str = "dhan"
+    intraday_dataset_id: uuid.UUID | None = None
+    daily_dataset_id: uuid.UUID | None = None
+    execution: ExecutionSettings = Field(default_factory=ExecutionSettings)
+    risk: RiskSettings = Field(default_factory=RiskSettings)
+    capital: CapitalAssumptions = Field(default_factory=CapitalAssumptions)
+
+    @model_validator(mode="after")
+    def check_dates(self) -> Self:
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must not be after end_date")
+        return self
+
+
+class BacktestJobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    strategy_version_id: uuid.UUID
+    intraday_dataset_id: uuid.UUID
+    daily_dataset_id: uuid.UUID
+    timeframe: str
+    start_date: date
+    end_date: date
+    execution_method: str
+    execution_settings: dict[str, Any]
+    risk_settings: dict[str, Any]
+    capital_assumptions: dict[str, Any]
+    input_hash: str
+    result_hash: str | None
+    status: str
+    error: str | None
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+class BacktestDetailResponse(BacktestJobResponse):
+    trade_count: int
+    events: list[dict[str, Any]]

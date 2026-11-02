@@ -177,6 +177,30 @@ def test_results_are_deterministic() -> None:
     ]
 
 
+def test_multi_day_runs_feed_each_daily_candle_after_its_session() -> None:
+    tuesday = date(2025, 6, 17)
+    bars = intraday_frame(LONG_AT_DAILY_MTZ)
+    frame = pl.concat([bars, intraday_frame(LONG_AT_DAILY_MTZ, tuesday)])
+    daily = daily_frame([(tuesday, 101.0, 103, 100, 102)])
+    decisions = evaluate(frame, daily)
+    tuesday_levels = decisions[3].context["cpr_daily"]
+    # Tuesday's levels come from Monday's daily candle: high 102, low 99.5.
+    assert tuesday_levels["ph"] == 102
+    assert tuesday_levels["pl"] == 99.5
+
+
+def test_a_session_cannot_start_after_its_own_daily_candle_was_added() -> None:
+    from app.strategy.engine import MtzReversalStrategy, SessionInfo
+    from app.strategy.levels import PeriodBar
+
+    strategy = MtzReversalStrategy()
+    strategy.add_completed_session(MONDAY, PeriodBar(100, 102, 99, 101))
+    with pytest.raises(ValueError, match="would see"):
+        strategy.start_session(SessionInfo(MONDAY, 100, "daily_candle"))
+    with pytest.raises(ValueError, match="date order"):
+        strategy.add_completed_session(MONDAY, PeriodBar(100, 102, 99, 101))
+
+
 def test_code_hash_is_stable_and_well_formed() -> None:
     assert code_hash() == code_hash()
     assert len(code_hash()) == 64

@@ -1,6 +1,8 @@
 """Feeds stored candles to the strategy in strict chronological order."""
 
 import hashlib
+from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
@@ -26,14 +28,27 @@ def code_hash() -> str:
     return digest.hexdigest()
 
 
+@dataclass(frozen=True)
+class BarEvaluation:
+    decision: Decision
+    final_bar_of_session: bool
+
+
 def evaluate(
     intraday: pl.DataFrame, daily: pl.DataFrame, parameters: StrategyParameters | None = None
 ) -> list[Decision]:
-    """One decision per intraday candle.
+    """One decision per intraday candle."""
+    return [item.decision for item in iter_evaluations(intraday, daily, parameters)]
+
+
+def iter_evaluations(
+    intraday: pl.DataFrame, daily: pl.DataFrame, parameters: StrategyParameters | None = None
+) -> Iterator[BarEvaluation]:
+    """Decisions in chronological order, produced one candle at a time.
 
     `daily` may extend beyond the intraday range. A daily candle is given to the strategy only once
     its session has ended; of the current session's daily candle, only the open is used before the
-    final bar.
+    final bar. A bar is flagged final when it closes at the scheduled session close.
     """
     strategy = MtzReversalStrategy(parameters)
     daily_rows = {
@@ -42,7 +57,6 @@ def evaluate(
     daily_dates = sorted(daily_rows)
     next_daily = 0
 
-    decisions = []
     current_date = None
     session_close = None
     for row in intraday.sort("timestamp").iter_rows(named=True):
@@ -70,16 +84,14 @@ def evaluate(
         local_open = row["timestamp"].astimezone(EXCHANGE_TZ)
         final_bar = session_close is not None and local_open + _BAR == session_close
         today = daily_rows.get(day)
-        decisions.append(
-            strategy.on_bar(
-                row["timestamp"],
-                Bar(row["open"], row["high"], row["low"], row["close"]),
-                final_bar_of_session=final_bar,
-                session_daily_candle=(
-                    PeriodBar(today["open"], today["high"], today["low"], today["close"])
-                    if final_bar and today is not None
-                    else None
-                ),
-            )
+        decision = strategy.on_bar(
+            row["timestamp"],
+            Bar(row["open"], row["high"], row["low"], row["close"]),
+            final_bar_of_session=final_bar,
+            session_daily_candle=(
+                PeriodBar(today["open"], today["high"], today["low"], today["close"])
+                if final_bar and today is not None
+                else None
+            ),
         )
-    return decisions
+        yield BarEvaluation(decision, final_bar)

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import instruments, market_data, strategies, system
+from app.api.routes import backtests, instruments, market_data, strategies, system
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
     api.include_router(instruments.router)
     api.include_router(market_data.router)
     api.include_router(strategies.router)
+    api.include_router(backtests.router)
     app.include_router(api)
     return app
 

@@ -4,6 +4,7 @@ Everything here is synthetic and does not represent real NIFTY 50 prices. It mus
 a production workflow.
 """
 
+import random
 from datetime import UTC, date, datetime, timedelta
 
 from app.data.calendar import nse
@@ -103,3 +104,66 @@ class MockProvider(MarketDataProvider):
 
     def validate_connection(self) -> ConnectionStatus:
         return ConnectionStatus(True, "mock")
+
+
+def random_walk_session(day: date) -> list[Candle]:
+    """A seeded random walk for one session. Deterministic per date. Synthetic, not market data."""
+    rng = random.Random(day.toordinal())
+    session = nse.sessions(day, day)[0]
+    price = 22000 + rng.uniform(-300, 300)
+    candles = []
+    for opened in nse.expected_bar_opens(session):
+        close = price + rng.gauss(0, 12)
+        high = max(price, close) + abs(rng.gauss(0, 6))
+        low = min(price, close) - abs(rng.gauss(0, 6))
+        candles.append(
+            Candle(
+                symbol=NIFTY50,
+                timeframe=Timeframe.M5,
+                timestamp=opened,
+                open=round(price, 2),
+                high=round(high, 2),
+                low=round(low, 2),
+                close=round(close, 2),
+                volume=None,
+                provider=MOCK_PROVIDER,
+                ingested_at=INGESTED_AT,
+            )
+        )
+        price = close
+    return candles
+
+
+class RandomWalkProvider(MockProvider):
+    """Synthetic moving prices, with daily candles consistent with the 5-minute candles."""
+
+    def get_historical_candles(
+        self, instrument: ProviderInstrument, timeframe: Timeframe, start: date, end: date
+    ) -> ProviderChunk:
+        self._record(start, end)
+        candles = [c for s in nse.sessions(start, end) for c in random_walk_session(s.trading_date)]
+        return ProviderChunk(candles, {"mock": True})
+
+    def get_daily_candles(
+        self, instrument: ProviderInstrument, start: date, end: date
+    ) -> ProviderChunk:
+        self._record(start, end)
+        candles = []
+        for session in nse.sessions(start, end):
+            bars = random_walk_session(session.trading_date)
+            midnight = datetime.combine(session.trading_date, datetime.min.time(), EXCHANGE_TZ)
+            candles.append(
+                Candle(
+                    symbol=NIFTY50,
+                    timeframe=Timeframe.D1,
+                    timestamp=midnight,
+                    open=bars[0].open,
+                    high=max(b.high for b in bars),
+                    low=min(b.low for b in bars),
+                    close=bars[-1].close,
+                    volume=None,
+                    provider=MOCK_PROVIDER,
+                    ingested_at=INGESTED_AT,
+                )
+            )
+        return ProviderChunk(candles, {"mock": True})

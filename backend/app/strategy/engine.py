@@ -105,19 +105,27 @@ class MtzReversalStrategy:
         self._previous_close = math.nan
         self._previous_bar: Bar | None = None
         self._session: SessionInfo | None = None
+        self._last_completed: date | None = None
         self._levels: dict[Period, PeriodLevels] = {}
         self._session_high = math.nan
         self._session_low = math.nan
 
     def add_completed_session(self, trading_date: date, bar: PeriodBar) -> None:
-        """Record a finished session's daily candle. Must precede the next session's bars."""
-        if self._session is not None and trading_date >= self._session.trading_date:
-            raise ValueError("A session's daily candle can only be added after the session")
+        """Record a finished session's daily candle, between sessions and in date order."""
+        if self._last_completed is not None and trading_date <= self._last_completed:
+            raise ValueError(f"Daily candles must be added in date order; got {trading_date}")
         for aggregator in self._aggregators.values():
             aggregator.add_day(trading_date, bar)
         self._adr.add_session(bar.high, bar.low)
+        self._last_completed = trading_date
 
     def start_session(self, session: SessionInfo) -> None:
+        # Every daily candle known to the strategy must be from an earlier session.
+        if self._last_completed is not None and self._last_completed >= session.trading_date:
+            raise ValueError(
+                f"Session {session.trading_date} would see the daily candle "
+                f"of {self._last_completed}"
+            )
         self._session = session
         self._levels = {
             period: aggregator.levels_for(session.trading_date, session.open)
