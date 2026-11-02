@@ -66,7 +66,7 @@ All routes are under `/api/v1`.
 | Market data | `GET /market-data/availability`, `/datasets`, `/health`, `POST /market-data/ingest`, `GET /market-data/jobs`, `GET /market-data/jobs/{id}`, `POST /market-data/jobs/{id}/cancel`, `/resume` | 2 |
 | Strategies | `GET`/`POST /strategies`, `GET /strategies/{id}`, `POST /strategies/{id}/versions` (Pine source stored, not returned) | 3 |
 | Backtests | `POST`/`GET /backtests`, `GET /backtests/{id}` (with events and trade count), `POST /backtests/{id}/cancel` | 4 |
-| Analytics | `GET /backtests/{id}/metrics`, `/trades`, `/equity`, `/daily`, `/decisions` | 5 |
+| Analytics | `GET /backtests/{id}/metrics`, `/trades`, `/equity`, `/daily`, `/monthly`, `/decisions` | 5 |
 | Reports | `POST`/`GET /backtests/{id}/reports` | 6 |
 | AI datasets | `POST /ai-datasets/generate`, `GET /ai-datasets`, `GET /ai-datasets/{id}`, `/validate`, `/exports` | 7 |
 
@@ -76,7 +76,7 @@ All routes are under `/api/v1`.
 - [ ] Phase 2: Historical data (built and tested with mocks; awaiting a first real download, which needs a Dhan Data API token)
 - [ ] Phase 3: Strategy implementation (built and tested; accuracy against TradingView awaits exports, see [strategy.md](strategy.md))
 - [x] Phase 4: Backtesting engine ([backtesting.md](backtesting.md); not yet run on real data)
-- [ ] Phase 5: Analytics
+- [x] Phase 5: Analytics ([analytics.md](analytics.md))
 - [ ] Phase 6: Reporting
 - [ ] Phase 7: AI dataset pipeline
 - [ ] Phase 8: Frontend completion

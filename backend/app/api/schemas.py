@@ -206,3 +206,102 @@ class BacktestJobResponse(BaseModel):
 class BacktestDetailResponse(BacktestJobResponse):
     trade_count: int
     events: list[dict[str, Any]]
+
+
+class MetricsResponse(BaseModel):
+    """All point values are theoretical NIFTY 50 index points."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    total_trades: int
+    winning_trades: int
+    losing_trades: int
+    win_rate: float | None
+    gross_profit_points: float
+    gross_loss_points: float
+    net_points: float
+    profit_factor: float | None
+    expectancy_points: float | None
+    average_trade_points: float | None
+    average_win_points: float | None
+    average_loss_points: float | None
+    max_drawdown_points: float | None
+    average_holding_seconds: float | None
+    max_consecutive_wins: int
+    max_consecutive_losses: int
+    sharpe_ratio: float | None
+    sharpe_assumptions: dict[str, Any]
+    by_market_condition: dict[str, Any]
+    unit_summary: dict[str, Any]
+
+
+class TradeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    trade_number: int
+    trading_date: date
+    side: str
+    entry_ts: datetime
+    exit_ts: datetime
+    entry_price: float
+    exit_price: float
+    stop_loss: float | None
+    target: float | None
+    exit_reason: str
+    holding_seconds: int
+    gross_points: float
+    cost_points: float
+    net_points: float
+    market_regime: str | None
+    indicators_at_entry: dict[str, Any]
+    indicators_at_exit: dict[str, Any]
+    decision_reason: list[Any]
+    execution_assumptions: dict[str, Any]
+
+
+class TradePage(BaseModel):
+    total: int
+    items: list[TradeResponse]
+
+
+class EquityPointResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ts: datetime
+    cumulative_points: float
+    drawdown_points: float
+
+
+class DailyPerformanceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    trading_date: date
+    trades: int
+    wins: int
+    losses: int
+    net_points: float
+
+
+class DecisionResponse(BaseModel):
+    candle_ts: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    action: str
+    reason_codes: list[Any]
+    explanation: str
+    long_permission: bool | None
+    short_permission: bool | None
+    reversal_state: dict[str, Any]
+    trade_engine_state: dict[str, Any]
+    trade_opened: bool
+    position_closed: bool
+    position_state: str
+    market_context: dict[str, Any]
+
+
+class DecisionPage(BaseModel):
+    total: int
+    items: list[DecisionResponse]

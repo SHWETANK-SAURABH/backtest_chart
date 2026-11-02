@@ -243,6 +243,80 @@ def test_only_pending_jobs_run(db: Session, setup: dict) -> None:
     assert count(db, StrategyDecision, job) == 20 * 75
 
 
+def test_saved_metrics_agree_with_saved_trades(db: Session, setup: dict) -> None:
+    from app.database.models import BacktestMetrics, DailyPerformance, EquityCurvePoint
+
+    job = make_job(db, setup)
+    BacktestService(db, setup["store"]).run(job.id)
+    trades = db.scalars(select(Trade).where(Trade.backtest_job_id == job.id)).all()
+    metrics = db.get_one(BacktestMetrics, job.id)
+
+    assert metrics.total_trades == len(trades)
+    assert metrics.net_points == pytest.approx(sum(t.net_points for t in trades))
+    assert metrics.winning_trades == sum(1 for t in trades if t.net_points > 0)
+    assert metrics.sharpe_assumptions["frequency"] == "daily"
+    assert metrics.unit_summary["actual_monetary"]["value"] is None
+    assert sum(r["trades"] for r in metrics.by_market_condition["weekday"].values()) == len(trades)
+
+    daily = db.scalars(
+        select(DailyPerformance).where(DailyPerformance.backtest_job_id == job.id)
+    ).all()
+    assert len(daily) == 20  # every tested session, with or without trades
+    assert sum(r.net_points for r in daily) == pytest.approx(metrics.net_points)
+
+    curve = db.scalars(
+        select(EquityCurvePoint)
+        .where(EquityCurvePoint.backtest_job_id == job.id)
+        .order_by(EquityCurvePoint.ts)
+    ).all()
+    assert len(curve) == len(trades)
+    assert curve[-1].cumulative_points == pytest.approx(metrics.net_points)
+    assert max(p.drawdown_points for p in curve) == pytest.approx(metrics.max_drawdown_points)
+    assert all(t.market_regime is None or "_" in t.market_regime for t in trades)
+
+
+def test_analytics_endpoints(client: TestClient, db: Session, setup: dict) -> None:
+    job = make_job(db, setup)
+    BacktestService(db, setup["store"]).run(job.id)
+    base = f"/api/v1/backtests/{job.id}"
+
+    metrics = client.get(f"{base}/metrics").json()
+    trades = client.get(f"{base}/trades").json()
+    assert trades["total"] == metrics["total_trades"]
+    wins = client.get(f"{base}/trades", params={"outcome": "win"}).json()
+    assert wins["total"] == metrics["winning_trades"]
+    assert all(t["net_points"] > 0 for t in wins["items"])
+    assert len(client.get(f"{base}/trades", params={"limit": 1}).json()["items"]) <= 1
+
+    assert len(client.get(f"{base}/equity").json()) == metrics["total_trades"]
+    daily = client.get(f"{base}/daily").json()
+    assert len(daily) == 20
+    monthly = client.get(f"{base}/monthly").json()
+    assert [m["trading_date"] for m in monthly] == ["2025-06-01"]
+    assert monthly[0]["net_points"] == pytest.approx(metrics["net_points"])
+
+    page = client.get(f"{base}/decisions", params={"limit": 10}).json()
+    assert page["total"] == 20 * 75
+    assert len(page["items"]) == 10
+    assert "cpr" in page["items"][0]["market_context"]
+    first_day = client.get(
+        f"{base}/decisions",
+        params={"start_date": "2025-06-02", "end_date": "2025-06-02", "limit": 100},
+    ).json()
+    assert first_day["total"] == 75
+    holds = client.get(f"{base}/decisions", params={"reason_code": "NO_REVERSAL_SIGNAL"}).json()
+    assert 0 < holds["total"] < page["total"]
+
+
+def test_analytics_require_a_completed_backtest(
+    client: TestClient, db: Session, setup: dict
+) -> None:
+    job = make_job(db, setup)
+    assert client.get(f"/api/v1/backtests/{job.id}/metrics").status_code == 409
+    missing = "00000000-0000-0000-0000-000000000000"
+    assert client.get(f"/api/v1/backtests/{missing}/trades").status_code == 404
+
+
 # API
 
 

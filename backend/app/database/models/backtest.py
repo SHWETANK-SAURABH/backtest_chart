@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -175,6 +176,9 @@ class BacktestMetrics(Base):
     sharpe_ratio: Mapped[float | None] = mapped_column(Double)
     sharpe_assumptions: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
     by_market_condition: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+    unit_summary: Mapped[dict[str, Any]] = mapped_column(
+        nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
 
 
 class EquityCurvePoint(Base):

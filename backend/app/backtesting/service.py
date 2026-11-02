@@ -12,6 +12,16 @@ import structlog
 from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
+from app.analytics import regimes
+from app.analytics.metrics import (
+    SHARPE_ASSUMPTIONS,
+    daily_performance,
+    equity_curve,
+    max_drawdown,
+    sharpe_ratio,
+    trade_statistics,
+    unit_summary,
+)
 from app.backtesting.engine import BacktestEngine, BacktestResult, BarRecord
 from app.backtesting.settings import CapitalAssumptions, ExecutionSettings, RiskSettings
 from app.data.calendar import nse
@@ -19,7 +29,10 @@ from app.data.storage.candle_store import CandleStore
 from app.database.models import (
     BacktestJob,
     BacktestJobEvent,
+    BacktestMetrics,
+    DailyPerformance,
     Dataset,
+    EquityCurvePoint,
     MarketContext,
     StrategyDecision,
     StrategyVersion,
@@ -27,6 +40,7 @@ from app.database.models import (
 )
 from app.domain.enums import DatasetStatus, JobStatus
 from app.portfolio.position import ClosedTrade
+from app.strategy.engine import Decision
 from app.strategy.parameters import StrategyParameters
 from app.strategy.runner import BarEvaluation, code_hash, iter_evaluations
 
@@ -183,7 +197,7 @@ class BacktestService:
         self._session.execute(
             insert(MarketContext),
             [
-                _context_row(decision_id, record.decision.context)
+                _context_row(decision_id, record.decision)
                 for decision_id, record in zip(decision_ids, result.records, strict=True)
             ],
         )
@@ -192,6 +206,61 @@ class BacktestService:
                 insert(Trade),
                 [_trade_row(job.id, trade, result.assumptions) for trade in result.trades],
             )
+        self._save_analytics(job, result)
+
+    def _save_analytics(self, job: BacktestJob, result: BacktestResult) -> None:
+        trades = result.trades
+        statistics = trade_statistics(trades)
+        curve = equity_curve(trades)
+        sessions = sorted({record.decision.trading_date for record in result.records})
+        daily = daily_performance(trades, sessions)
+        by_condition = regimes.performance_by_condition(
+            ((regimes.labels(t.entry_context, t.entry_time), t.net_points) for t in trades),
+            ((_patterns(t.entry_reasons), t.net_points) for t in trades),
+        )
+        self._session.add(
+            BacktestMetrics(
+                backtest_job_id=job.id,
+                **{
+                    key: value
+                    for key, value in statistics.to_dict().items()
+                    if key != "breakeven_trades"
+                },
+                max_drawdown_points=max_drawdown(curve),
+                sharpe_ratio=sharpe_ratio(daily),
+                sharpe_assumptions=SHARPE_ASSUMPTIONS,
+                # Breakeven trades are total minus winning minus losing.
+                by_market_condition=by_condition,
+                unit_summary=unit_summary(trades),
+            )
+        )
+        if curve:
+            self._session.execute(
+                insert(EquityCurvePoint),
+                [
+                    {
+                        "backtest_job_id": job.id,
+                        "ts": point.time,
+                        "cumulative_points": point.cumulative_points,
+                        "drawdown_points": point.drawdown_points,
+                    }
+                    for point in curve
+                ],
+            )
+        self._session.execute(
+            insert(DailyPerformance),
+            [
+                {
+                    "backtest_job_id": job.id,
+                    "trading_date": row.period,
+                    "trades": row.trades,
+                    "wins": row.wins,
+                    "losses": row.losses,
+                    "net_points": row.net_points,
+                }
+                for row in daily
+            ],
+        )
 
     def _event(
         self, job: BacktestJob, kind: str, message: str, details: dict[str, Any] | None = None
@@ -236,7 +305,12 @@ def _decision_row(job_id: uuid.UUID, record: BarRecord) -> dict[str, Any]:
     }
 
 
-def _context_row(decision_id: int, context: dict[str, Any]) -> dict[str, Any]:
+def _patterns(reason_codes: list[str]) -> list[str]:
+    return [code.split("_")[0] for code in reason_codes if code.endswith(("_LONG", "_SHORT"))]
+
+
+def _context_row(decision_id: int, decision: Decision) -> dict[str, Any]:
+    context = decision.context
     adr = context.get("adr", {})
     return {
         "decision_id": decision_id,
@@ -247,8 +321,7 @@ def _context_row(decision_id: int, context: dict[str, Any]) -> dict[str, Any]:
         "ema20": context.get("ema_slow"),
         "ema_direction": context.get("ema_slow_direction"),
         "market_structure": MARKET_STRUCTURE,
-        # Regime labels are defined with the analytics in Phase 5.
-        "market_regime": None,
+        "market_regime": regimes.regime(context, decision.timestamp),
     }
 
 
@@ -271,7 +344,7 @@ def _trade_row(
         "gross_points": trade.gross_points,
         "cost_points": trade.cost_points,
         "net_points": trade.net_points,
-        "market_regime": None,
+        "market_regime": regimes.regime(trade.entry_context, trade.entry_time),
         "indicators_at_entry": trade.entry_context,
         "indicators_at_exit": trade.exit_context,
         "decision_reason": trade.entry_reasons,
