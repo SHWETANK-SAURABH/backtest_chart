@@ -57,6 +57,12 @@ def iter_evaluations(
     daily_dates = sorted(daily_rows)
     next_daily = 0
 
+    # One calendar lookup for the whole run; a date with no scheduled session gets no final bar.
+    closes = {}
+    if intraday.height:
+        first, last = intraday["trading_date"].min(), intraday["trading_date"].max()
+        closes = {s.trading_date: s.close for s in nse.sessions(first, last)}  # type: ignore[arg-type]
+
     current_date = None
     session_close = None
     for row in intraday.sort("timestamp").iter_rows(named=True):
@@ -77,8 +83,7 @@ def iter_evaluations(
                 if today is not None
                 else SessionInfo(day, row["open"], "first_intraday_bar")
             )
-            sessions = nse.sessions(day, day)
-            session_close = sessions[0].close if sessions else None
+            session_close = closes.get(day)
             current_date = day
 
         local_open = row["timestamp"].astimezone(EXCHANGE_TZ)

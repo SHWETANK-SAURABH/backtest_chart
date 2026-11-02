@@ -65,7 +65,7 @@ All routes are under `/api/v1`.
 | Instruments | `GET /instruments` | 1 |
 | Market data | `GET /market-data/availability`, `/datasets`, `/health`, `POST /market-data/ingest`, `GET /market-data/jobs`, `GET /market-data/jobs/{id}`, `POST /market-data/jobs/{id}/cancel`, `/resume` | 2 |
 | Strategies | `GET`/`POST /strategies`, `GET /strategies/{id}`, `POST /strategies/{id}/versions` (Pine source stored, not returned) | 3 |
-| Backtests | `POST`/`GET /backtests`, `GET /backtests/{id}` (with events and trade count), `POST /backtests/{id}/cancel` | 4 |
+| Backtests | `POST`/`GET /backtests`, `GET /backtests/{id}` (with events and trade count), `POST /backtests/{id}/cancel`, `POST /backtests/{id}/rerun`, `GET /backtests/{id}/reproducibility` | 4, 9 |
 | Analytics | `GET /backtests/{id}/metrics`, `/trades`, `/equity`, `/daily`, `/monthly`, `/decisions` | 5 |
 | Reports | `POST`/`GET /backtests/{id}/reports`, `GET /backtests/{id}/reports/{report id}/download` | 6 |
 | AI datasets | `POST /ai-datasets/generate`, `GET /ai-datasets`, `GET /ai-datasets/{id}`, `/validate`, `/exports`, `/exports/{export id}/download` (`{id}` is a dataset version) | 7 |
@@ -80,7 +80,7 @@ All routes are under `/api/v1`.
 - [x] Phase 6: Reporting ([reporting.md](reporting.md))
 - [x] Phase 7: AI dataset pipeline ([ai-datasets.md](ai-datasets.md))
 - [x] Phase 8: Frontend completion ([frontend.md](frontend.md))
-- [ ] Phase 9: Quality assurance
+- [x] Phase 9: Quality assurance, except real-data validation and TradingView parity ([mvp-status.md](mvp-status.md))
 
 ## Known limitations
 

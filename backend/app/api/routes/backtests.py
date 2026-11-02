@@ -9,7 +9,12 @@ from kombu.exceptions import OperationalError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.schemas import BacktestCreate, BacktestDetailResponse, BacktestJobResponse
+from app.api.schemas import (
+    BacktestCreate,
+    BacktestDetailResponse,
+    BacktestJobResponse,
+    ReproducibilityResponse,
+)
 from app.backtesting.service import input_hash
 from app.database.models import (
     BacktestJob,
@@ -107,6 +112,11 @@ def create_backtest(request: BacktestCreate, session: SessionDep) -> BacktestJob
     )
     session.add(job)
     session.commit()
+    _enqueue(session, job)
+    return BacktestJobResponse.model_validate(job)
+
+
+def _enqueue(session: Session, job: BacktestJob) -> None:
     try:
         run_backtest.apply_async(args=[str(job.id)], retry=False)
     except OperationalError as exc:
@@ -115,7 +125,64 @@ def create_backtest(request: BacktestCreate, session: SessionDep) -> BacktestJob
         job.error = "Could not reach the job queue. Is Redis running?"
         session.commit()
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, job.error) from exc
+
+
+@router.post("/{job_id}/rerun", status_code=status.HTTP_202_ACCEPTED)
+def rerun_backtest(job_id: uuid.UUID, session: SessionDep) -> BacktestJobResponse:
+    """Queue a new run with exactly the same strategy version, datasets and settings."""
+    original = _get_job(session, job_id)
+    job = BacktestJob(
+        **{
+            column: getattr(original, column)
+            for column in (
+                "strategy_version_id",
+                "intraday_dataset_id",
+                "daily_dataset_id",
+                "instrument_id",
+                "timeframe",
+                "start_date",
+                "end_date",
+                "execution_method",
+                "execution_settings",
+                "risk_settings",
+                "capital_assumptions",
+                "input_hash",
+            )
+        }
+    )
+    session.add(job)
+    session.commit()
+    _enqueue(session, job)
     return BacktestJobResponse.model_validate(job)
+
+
+@router.get("/{job_id}/reproducibility")
+def reproducibility(job_id: uuid.UUID, session: SessionDep) -> ReproducibilityResponse:
+    """Every run with the same inputs, and whether the completed ones produced identical results."""
+    job = _get_job(session, job_id)
+    runs = list(
+        session.scalars(
+            select(BacktestJob)
+            .where(BacktestJob.input_hash == job.input_hash)
+            .order_by(BacktestJob.created_at)
+        )
+    )
+    results = {r.result_hash for r in runs if r.status == JobStatus.COMPLETED}
+    completed = sum(1 for r in runs if r.status == JobStatus.COMPLETED)
+    return ReproducibilityResponse(
+        input_hash=job.input_hash,
+        runs=[
+            {
+                "id": r.id,
+                "status": r.status,
+                "result_hash": r.result_hash,
+                "created_at": r.created_at,
+            }
+            for r in runs
+        ],
+        completed_runs=completed,
+        identical=None if completed < 2 else len(results) == 1,
+    )
 
 
 @router.get("")

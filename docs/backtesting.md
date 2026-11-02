@@ -89,6 +89,15 @@ Each stored decision records what execution did on that candle, in `trade_engine
 - A job is refused if the strategy code has changed since its version was registered, or if a
   dataset is invalid or its files have been modified.
 - Once a backtest completes, its strategy version cannot be changed.
+- `POST /backtests/{id}/rerun` queues a new run with identical inputs, and
+  `GET /backtests/{id}/reproducibility` lists every run with the same input hash and whether their
+  result hashes match. The results page shows this with a re-run button.
+
+## Performance
+
+On the development machine, the strategy and engine process a year of 5-minute candles (about
+18,400) in 1.5 to 3.6 seconds. A complete one-year backtest, including saving every decision and
+trade, takes about 14 seconds. `pytest -m performance` checks for regressions.
 
 ## Running a backtest
 

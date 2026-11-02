@@ -6,6 +6,7 @@ import { useState } from "react";
 import { BacktestHeader } from "@/components/backtest-header";
 import { EquityChart } from "@/components/charts/equity-chart";
 import { PeriodBars } from "@/components/charts/period-bars";
+import { ReproducibilityCard } from "@/components/reproducibility-card";
 import { StatTile } from "@/components/stat-tile";
 import { Card, Empty, ErrorBox, Loading, Select, Table, Td } from "@/components/ui";
 import { useApi } from "@/hooks/use-api";
@@ -125,6 +126,7 @@ export default function BacktestResultsPage() {
               <p className="mt-3 text-xs text-muted">Labels use only information known when each entry was decided. See docs/analytics.md.</p>
             </Card>
           </div>
+          <ReproducibilityCard backtestId={id} />
         </>
       )}
     </div>

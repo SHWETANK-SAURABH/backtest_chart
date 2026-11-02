@@ -209,6 +209,21 @@ class BacktestDetailResponse(BacktestJobResponse):
     events: list[dict[str, Any]]
 
 
+class ReproducibilityRun(BaseModel):
+    id: uuid.UUID
+    status: str
+    result_hash: str | None
+    created_at: datetime
+
+
+class ReproducibilityResponse(BaseModel):
+    input_hash: str
+    runs: list[ReproducibilityRun]
+    completed_runs: int
+    # None until at least two runs with these inputs have completed.
+    identical: bool | None
+
+
 class MetricsResponse(BaseModel):
     """All point values are theoretical NIFTY 50 index points."""
 

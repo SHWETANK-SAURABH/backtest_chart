@@ -20,7 +20,7 @@ from typing import Any
 
 from app.domain.enums import DecisionAction
 from app.strategy.adr import DailyAdr, adr_state
-from app.strategy.hot_zones import detect_hot_zones, hot_zone_breakouts, is_near
+from app.strategy.hot_zones import HotZone, detect_hot_zones, hot_zone_breakouts, is_near
 from app.strategy.levels import PeriodBar
 from app.strategy.parameters import StrategyParameters
 from app.strategy.periods import Period, PeriodAggregator, PeriodLevels
@@ -109,6 +109,9 @@ class MtzReversalStrategy:
         self._levels: dict[Period, PeriodLevels] = {}
         self._session_high = math.nan
         self._session_low = math.nan
+        self._hot_zones: list[HotZone] = []
+        self._mtz_zones: list[Zone] = []
+        self._session_context: dict[str, Any] = {}
 
     def add_completed_session(self, trading_date: date, bar: PeriodBar) -> None:
         """Record a finished session's daily candle, between sessions and in date order."""
@@ -134,6 +137,30 @@ class MtzReversalStrategy:
         self._session_high = math.nan
         self._session_low = math.nan
 
+        # Levels, hot zones and the trade direction panel are fixed for the whole session, so
+        # they are computed and serialised once here rather than on every candle.
+        day, week = self._levels[Period.DAY], self._levels[Period.WEEK]
+        self._hot_zones = detect_hot_zones(
+            day,
+            week,
+            self._levels[Period.MONTH],
+            self._levels[Period.YEAR],
+            self.parameters.hot_zone_tolerance,
+            self.parameters.hot_zone_min_score,
+        )
+        self._mtz_zones = self._zones()
+        self._session_context = _clean(
+            {
+                "session_open": session.open,
+                "session_open_source": session.open_source,
+                "cpr_daily": day.cpr.to_dict(),
+                "cpr_weekly": week.cpr.to_dict(),
+                "camarilla_daily": day.camarilla.to_dict(),
+                "trade_direction": trade_direction(day.cpr, week.cpr, session.open).to_dict(),
+                "hot_zone_list": [zone.to_dict() for zone in self._hot_zones],
+            }
+        )
+
     def on_bar(
         self,
         timestamp: datetime,
@@ -146,8 +173,7 @@ class MtzReversalStrategy:
         if self._session is None:
             raise RuntimeError("start_session must be called first")
         session = self._session
-        day, week = self._levels[Period.DAY], self._levels[Period.WEEK]
-        month, year = self._levels[Period.MONTH], self._levels[Period.YEAR]
+        day = self._levels[Period.DAY]
 
         self._session_high = (
             bar.high if is_na(self._session_high) else max(self._session_high, bar.high)
@@ -175,27 +201,14 @@ class MtzReversalStrategy:
             )
 
         signals = self._reversals.update(bar)
-        direction = trade_direction(day.cpr, week.cpr, session.open)
-        zones = detect_hot_zones(
-            day,
-            week,
-            month,
-            year,
-            self.parameters.hot_zone_tolerance,
-            self.parameters.hot_zone_min_score,
-        )
         h4_break, l4_break = hot_zone_breakouts(
-            zones, day.camarilla.h4, day.camarilla.l4, bar.close, self._previous_close
+            self._hot_zones, day.camarilla.h4, day.camarilla.l4, bar.close, self._previous_close
         )
 
         action, codes, entry = self._decide(bar, signals)
+        shared = self._session_context
         context = _clean(
             {
-                "session_open": session.open,
-                "session_open_source": session.open_source,
-                "cpr_daily": day.cpr.to_dict(),
-                "cpr_weekly": week.cpr.to_dict(),
-                "camarilla_daily": day.camarilla.to_dict(),
                 "adr": adr.to_dict(),
                 "ema_fast": ema_fast,
                 "ema_slow": ema_slow,
@@ -206,12 +219,7 @@ class MtzReversalStrategy:
                     "above" if bar.close > ema_slow else "below" if bar.close < ema_slow else "at"
                 ),
                 "cpr_position": _position(bar.close, day.cpr.tc, day.cpr.bc),
-                "trade_direction": direction.to_dict(),
-                "hot_zones": {
-                    "zones": [zone.to_dict() for zone in zones],
-                    "h4_breakout": h4_break,
-                    "l4_breakdown": l4_break,
-                },
+                "hot_zones": {"h4_breakout": h4_break, "l4_breakdown": l4_break},
                 "reversal_signals": [
                     {"code": s.code, "side": "long" if s.is_long else "short"} for s in signals
                 ],
@@ -224,6 +232,17 @@ class MtzReversalStrategy:
                 ),
             }
         )
+        # Session-wide values are shared, read-only, by every candle's context in the session.
+        context = {
+            "session_open": shared["session_open"],
+            "session_open_source": shared["session_open_source"],
+            "cpr_daily": shared["cpr_daily"],
+            "cpr_weekly": shared["cpr_weekly"],
+            "camarilla_daily": shared["camarilla_daily"],
+            "trade_direction": shared["trade_direction"],
+            **context,
+        }
+        context["hot_zones"] = {"zones": shared["hot_zone_list"], **context["hot_zones"]}
         self._previous_close = bar.close
         self._previous_slow = ema_slow
         self._previous_bar = bar
@@ -257,7 +276,7 @@ class MtzReversalStrategy:
     def _decide(
         self, bar: Bar, signals: list[ReversalSignal]
     ) -> tuple[DecisionAction, list[str], EntrySignal | None]:
-        zones = self._zones()
+        zones = self._mtz_zones
         if not zones:
             return DecisionAction.HOLD, ["NO_MTZ_LEVELS"], None
         if not signals:

@@ -128,6 +128,13 @@ export interface BacktestDetail extends Backtest {
   events: { type: string; message: string | null; details: Json; at: string }[];
 }
 
+export interface Reproducibility {
+  input_hash: string;
+  runs: { id: string; status: JobStatus; result_hash: string | null; created_at: string }[];
+  completed_runs: number;
+  identical: boolean | null;
+}
+
 export interface ConditionStats {
   trades: number;
   wins: number;
