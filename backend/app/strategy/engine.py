@@ -15,6 +15,14 @@ Added by the owner on 2026-11-03:
   targets the next MTZ; Trending and Possible Trending have no target and exit when a candle of
   the opposite colour closes beyond the fast (5) EMA, applied by the backtesting engine.
 
+Added by the owner later on 2026-11-03, each a backtest option:
+- The CPR width thresholds that set the histogram can differ from the script's 0.25/0.50/0.75%.
+- Day direction: the 2-day CPR relationship and opening bias allow only longs or only shorts.
+  Where they give no direction, a 15-minute close beyond the daily CPR sets it.
+- ADR trade: on days that are not Trending or Possible Trending, once the session's range reaches
+  the ADR, one trade against the move that completed it, targeting the next MTZ. ADR sets that
+  day's volatility, so this trade is not blocked by R2/S2, day direction or a Sideways histogram.
+
 Detailed choices made where the rules were silent are listed in docs/strategy.md.
 
 Candles are processed one at a time and the engine holds no reference to later candles, so a
@@ -23,19 +31,30 @@ decision can only depend on the past.
 
 import math
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
+from app.domain.candle import EXCHANGE_TZ
 from app.domain.enums import DecisionAction
 from app.strategy.adr import DailyAdr, adr_state
 from app.strategy.hot_zones import HotZone, detect_hot_zones, hot_zone_breakouts, is_near
-from app.strategy.levels import HIST_POSSIBLE, HIST_SIDEWAYS, HIST_TRENDING, PeriodBar
+from app.strategy.levels import (
+    HIST_POSSIBLE,
+    HIST_SIDEWAYS,
+    HIST_SIDEWAYS_TRADE,
+    HIST_TRENDING,
+    PeriodBar,
+    histogram,
+)
 from app.strategy.parameters import StrategyParameters
 from app.strategy.periods import Period, PeriodAggregator, PeriodLevels
 from app.strategy.pine import Ema, is_na
 from app.strategy.reasons import explain
 from app.strategy.reversal import Bar, ReversalDetector, ReversalSignal
-from app.strategy.trade_direction import trade_direction
+from app.strategy.trade_direction import BIAS_BEAR, BIAS_BULL, map_bias, trade_direction
+
+DIRECTION_FROM_BIAS = "opening_bias"
+DIRECTION_FROM_BREAK = "cpr_break_15m"
 
 
 @dataclass(frozen=True)
@@ -104,8 +123,11 @@ def _clean(data: dict[str, Any]) -> dict[str, Any]:
 
 
 class MtzReversalStrategy:
-    def __init__(self, parameters: StrategyParameters | None = None) -> None:
+    def __init__(
+        self, parameters: StrategyParameters | None = None, bar: timedelta = timedelta(minutes=5)
+    ) -> None:
         self.parameters = parameters or StrategyParameters()
+        self._bar = bar
         self._aggregators = {period: PeriodAggregator(period) for period in Period}
         self._adr = DailyAdr(self.parameters.adr_length)
         self._reversals = ReversalDetector()
@@ -123,6 +145,10 @@ class MtzReversalStrategy:
         self._mtz_zones: list[Zone] = []
         self._target_zones: list[Zone] = []
         self._extreme_reached = False
+        self._histogram = HIST_SIDEWAYS_TRADE
+        self._day_side: str | None = None
+        self._day_source: str | None = None
+        self._adr_done = False
         self._session_context: dict[str, Any] = {}
 
     def add_completed_session(self, trading_date: date, bar: PeriodBar) -> None:
@@ -163,11 +189,16 @@ class MtzReversalStrategy:
         self._mtz_zones = self._zones(self.parameters.mtz_periods)
         self._target_zones = self._zones((Period.DAY, Period.WEEK))
         self._extreme_reached = False
+        self._adr_done = False
+        # The backtest's own thresholds; NaN width (no history) falls through to Sideways Trading.
+        self._histogram = histogram(day.cpr.width_percent, self.parameters.cpr_thresholds)
+        self._day_side = {BIAS_BULL: "long", BIAS_BEAR: "short"}.get(map_bias(day.cpr.bias))
+        self._day_source = DIRECTION_FROM_BIAS if self._day_side else None
         self._session_context = _clean(
             {
                 "session_open": session.open,
                 "session_open_source": session.open_source,
-                "cpr_daily": day.cpr.to_dict(),
+                "cpr_daily": {**day.cpr.to_dict(), "histogram": self._histogram},
                 "cpr_weekly": week.cpr.to_dict(),
                 "camarilla_daily": day.camarilla.to_dict(),
                 "trade_direction": trade_direction(day.cpr, week.cpr, session.open).to_dict(),
@@ -220,12 +251,19 @@ class MtzReversalStrategy:
             not is_na(day.cpr.s2) and bar.low <= day.cpr.s2
         ):
             self._extreme_reached = True
+        # Without a direction from the opening bias, the latest 15-minute close beyond the CPR
+        # sets it; that close is known at this bar's close.
+        if self._day_source != DIRECTION_FROM_BIAS and self._closes_15m(timestamp):
+            if bar.close > day.cpr.tc:
+                self._day_side, self._day_source = "long", DIRECTION_FROM_BREAK
+            elif bar.close < day.cpr.bc:
+                self._day_side, self._day_source = "short", DIRECTION_FROM_BREAK
         h4_break, l4_break = hot_zone_breakouts(
             self._hot_zones, day.camarilla.h4, day.camarilla.l4, bar.close, self._previous_close
         )
 
         allowed = [s for s in signals if s.code in self.parameters.entry_patterns]
-        action, codes, entry = self._decide(bar, allowed, day.cpr.histogram)
+        action, codes, entry = self._adr_reversal(bar) or self._decide(bar, allowed)
         shared = self._session_context
         context = _clean(
             {
@@ -239,6 +277,7 @@ class MtzReversalStrategy:
                     "above" if bar.close > ema_slow else "below" if bar.close < ema_slow else "at"
                 ),
                 "cpr_position": _position(bar.close, day.cpr.tc, day.cpr.bc),
+                "day_direction": {"side": self._day_side, "source": self._day_source},
                 "hot_zones": {"h4_breakout": h4_break, "l4_breakdown": l4_break},
                 "reversal_signals": [
                     {"code": s.code, "side": "long" if s.is_long else "short"} for s in signals
@@ -293,8 +332,61 @@ class MtzReversalStrategy:
                 zones.append(Zone(names[period], cpr.tc, cpr.bc))
         return zones
 
+    def _closes_15m(self, timestamp: datetime) -> bool:
+        """Whether this bar's close is also a 15-minute candle's close."""
+        return (timestamp + self._bar).astimezone(EXCHANGE_TZ).minute % 15 == 0
+
+    def _adr_reversal(
+        self, bar: Bar
+    ) -> tuple[DecisionAction, list[str], EntrySignal | None] | None:
+        """The ADR trade, on the bar where the session's range first reaches the ADR."""
+        adr = self._adr.value
+        if (
+            not self.parameters.adr_trade
+            or self._adr_done
+            or self._histogram in (HIST_TRENDING, HIST_POSSIBLE)
+            or is_na(adr)
+            or self._session_high - self._session_low < adr
+        ):
+            return None
+        self._adr_done = True
+        made_high = bar.high >= self._session_high
+        made_low = bar.low <= self._session_low
+        if made_high == made_low:
+            return DecisionAction.HOLD, ["ADR_COMPLETE", "ADR_DIRECTION_UNCLEAR"], None
+        # The move that completed the ADR was down, so the trade is long, and the reverse.
+        is_long = made_low
+        codes = ["ADR_COMPLETE", "ADR_LONG" if is_long else "ADR_SHORT"]
+        if is_long:
+            stop = bar.low
+            candidates = [z for z in self._target_zones if z.bottom > bar.close]
+            target_zone = min(candidates, key=lambda z: z.bottom, default=None)
+            stop_valid = stop < bar.close
+        else:
+            stop = bar.high
+            candidates = [z for z in self._target_zones if z.top < bar.close]
+            target_zone = max(candidates, key=lambda z: z.top, default=None)
+            stop_valid = stop > bar.close
+        if target_zone is None:
+            return DecisionAction.HOLD, ["NO_TARGET_ZONE", *codes], None
+        if not stop_valid:
+            return DecisionAction.HOLD, ["INVALID_STOP", *codes], None
+        entry = EntrySignal(
+            side="long" if is_long else "short",
+            patterns=["ADR"],
+            touched_zones=[],
+            signal_candle_high=bar.high,
+            signal_candle_low=bar.low,
+            stop_loss=stop,
+            target=target_zone.bottom if is_long else target_zone.top,
+            target_zone=target_zone.name,
+            exit_mode="EXIT_MTZ_TARGET",
+        )
+        action = DecisionAction.BUY if is_long else DecisionAction.SELL
+        return action, [*codes, f"TARGET_{target_zone.name.upper()}", "EXIT_MTZ_TARGET"], entry
+
     def _decide(
-        self, bar: Bar, signals: list[ReversalSignal], histogram: str
+        self, bar: Bar, signals: list[ReversalSignal]
     ) -> tuple[DecisionAction, list[str], EntrySignal | None]:
         zones = self._mtz_zones
         if not zones:
@@ -302,7 +394,7 @@ class MtzReversalStrategy:
         if not signals:
             return DecisionAction.HOLD, ["NO_REVERSAL_SIGNAL"], None
         patterns = _pattern_codes(signals)
-        if histogram == HIST_SIDEWAYS:
+        if self._histogram == HIST_SIDEWAYS:
             return DecisionAction.HOLD, ["CPR_SIDEWAYS_NO_TRADE", *patterns], None
         if self._extreme_reached:
             return DecisionAction.HOLD, ["R2_S2_REACHED", *patterns], None
@@ -316,12 +408,19 @@ class MtzReversalStrategy:
             return DecisionAction.HOLD, ["REVERSAL_NOT_AT_MTZ", *patterns], None
         # Any zone the signal touched, from either period, is where the trade starts.
         targets = [zone for zone in self._target_zones if not zone.touched_by(reference)]
-        trail = histogram in (HIST_TRENDING, HIST_POSSIBLE)
+        trail = self._histogram in (HIST_TRENDING, HIST_POSSIBLE)
 
         sides = {signal.is_long for signal in signals}
         if len(sides) > 1:
             return DecisionAction.HOLD, ["CONFLICTING_SIGNALS", *patterns], None
         is_long = sides.pop()
+        codes = [*patterns, *(f"AT_{z.name.upper()}" for z in touched)]
+        if self.parameters.day_direction:
+            if self._day_side is None:
+                return DecisionAction.HOLD, ["NO_DAY_DIRECTION", *codes], None
+            if self._day_side != ("long" if is_long else "short"):
+                return DecisionAction.HOLD, ["AGAINST_DAY_DIRECTION", *codes], None
+            codes.append(f"DAY_DIRECTION_{(self._day_source or '').upper()}")
 
         # With several patterns on one bar, the widest signal candle sets the stop.
         if is_long:
@@ -337,7 +436,6 @@ class MtzReversalStrategy:
             target = target_zone.top if target_zone else None
             stop_valid = stop > bar.close
 
-        codes = [*patterns, *(f"AT_{z.name.upper()}" for z in touched)]
         if trail:
             target_zone, target = None, None
         elif target_zone is None:

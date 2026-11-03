@@ -24,7 +24,20 @@ MESSAGES = {
     "INVALID_STOP": "Reversal at an MTZ, but the signal candle's stop is not beyond the close.",
     "CPR_SIDEWAYS_NO_TRADE": "The daily CPR histogram is Sideways, so no trades today.",
     "R2_S2_REACHED": "Price has touched the daily R2 or S2, so no new entries today.",
-    "EXIT_MTZ_TARGET": "Sideways Trading CPR: exit at the target MTZ.",
+    "EXIT_MTZ_TARGET": "Exit at the target MTZ.",
+    "NO_DAY_DIRECTION": (
+        "No day direction yet: the opening bias gave none and no 15-minute candle has closed "
+        "beyond the CPR."
+    ),
+    "AGAINST_DAY_DIRECTION": "The signal is against the day's direction.",
+    "DAY_DIRECTION_OPENING_BIAS": "With the day's direction from the 2-day CPR and opening bias.",
+    "DAY_DIRECTION_CPR_BREAK_15M": (
+        "With the day's direction from the latest 15-minute close beyond the CPR."
+    ),
+    "ADR_COMPLETE": "The session's range has reached the ADR.",
+    "ADR_DIRECTION_UNCLEAR": "The candle completing the ADR made both the high and the low.",
+    "ADR_LONG": "ADR trade: long against the move down that completed the ADR.",
+    "ADR_SHORT": "ADR trade: short against the move up that completed the ADR.",
     "EXIT_EMA_TRAIL": (
         "Trending CPR: no target; exit when a candle of the opposite colour closes beyond the "
         "5 EMA."

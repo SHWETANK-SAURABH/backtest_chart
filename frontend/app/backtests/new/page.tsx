@@ -53,7 +53,13 @@ export default function NewBacktestPage() {
         start_date: form.get("start_date"),
         end_date: form.get("end_date"),
         timeframe: form.get("timeframe"),
-        strategy_options: { entry_patterns: patterns, mtz: form.get("mtz") },
+        strategy_options: {
+          entry_patterns: patterns,
+          mtz: form.get("mtz"),
+          cpr_thresholds: ["cpr_trending", "cpr_possible", "cpr_sideways"].map((name) => Number(form.get(name))),
+          day_direction: form.get("day_direction") === "on",
+          adr_trade: form.get("adr_trade") === "on",
+        },
         execution: { method: form.get("method"), slippage_points: Number(form.get("slippage_points") || 0) },
         risk: { max_trades_per_day: optional("max_trades_per_day"), max_daily_loss_points: optional("max_daily_loss_points") },
         capital: { initial_capital: Number(form.get("initial_capital") || 1000000) },
@@ -130,6 +136,41 @@ export default function NewBacktestPage() {
                   <option value="weekly">Weekly MTZ only</option>
                 </Select>
               </Field>
+            </div>
+            <fieldset className="mt-4 text-sm">
+              <legend className="mb-1 text-ink-2">Daily CPR width thresholds (%)</legend>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Field label="Trending below">
+                  <Input type="number" name="cpr_trending" min={0.01} max={10} step={0.01} defaultValue={0.25} required />
+                </Field>
+                <Field label="Possible Trending below">
+                  <Input type="number" name="cpr_possible" min={0.01} max={10} step={0.01} defaultValue={0.5} required />
+                </Field>
+                <Field label="Sideways below" hint="Wider is Sideways Trading">
+                  <Input type="number" name="cpr_sideways" min={0.01} max={10} step={0.01} defaultValue={0.75} required />
+                </Field>
+              </div>
+              <p className="mt-1 text-xs text-muted">The script&apos;s values are 0.25, 0.50 and 0.75. Each must be above the one before.</p>
+            </fieldset>
+            <div className="mt-4 space-y-2 text-sm">
+              <label className="flex items-start gap-2">
+                <input type="checkbox" name="day_direction" defaultChecked className="mt-1" />
+                <span>
+                  Day direction
+                  <span className="block text-xs text-muted">
+                    Longs or shorts only, from the 2-day CPR relationship and opening bias (accepted or rejected). When they give no direction, the latest 15-minute close beyond the CPR sets it.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" name="adr_trade" defaultChecked className="mt-1" />
+                <span>
+                  ADR trade
+                  <span className="block text-xs text-muted">
+                    Except on Trending and Possible Trending days: once the day&apos;s range reaches the ADR, one trade against the move, stop at that candle, target the next MTZ. Not blocked by R2/S2, day direction or a Sideways day.
+                  </span>
+                </span>
+              </label>
             </div>
             <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted">
               <li>No new entries once price touches the daily R2 or S2.</li>

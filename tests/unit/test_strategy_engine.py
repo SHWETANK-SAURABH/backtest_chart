@@ -34,8 +34,10 @@ def daily_frame(extra: list[tuple] | None = None, friday_close: float = 102) -> 
     return pl.DataFrame(rows, schema=["trading_date", "open", "high", "low", "close"], orient="row")
 
 
-def with_options(**options) -> StrategyParameters:
-    return StrategyOptions(**options).apply(StrategyParameters())
+def with_options(adr_length: int = 10, **options) -> StrategyParameters:
+    """Day direction and the ADR trade are off unless a test turns them on."""
+    chosen = StrategyOptions(**{"day_direction": False, "adr_trade": False, **options})
+    return chosen.apply(StrategyParameters(adr_length=adr_length))
 
 
 def intraday_frame(
@@ -284,3 +286,116 @@ def test_strategy_options_validate_and_normalise_patterns() -> None:
         StrategyOptions(entry_patterns=())
     with pytest.raises(ValueError, match="Unknown"):
         StrategyOptions(entry_patterns=("XX",))
+
+
+def test_cpr_thresholds_can_differ_from_the_script() -> None:
+    # Friday close 100.3 gives a 0.20% wide CPR: Trending by the script's thresholds.
+    parameters = with_options(cpr_thresholds=(0.05, 0.10, 0.15))
+    decision = evaluate(
+        intraday_frame(LONG_AT_DAILY_MTZ), daily_frame(friday_close=100.3), parameters
+    )[2]
+    assert decision.context["cpr_daily"]["histogram"] == "Sideways Trading"
+    assert decision.signal is not None
+    assert decision.signal.exit_mode == "EXIT_MTZ_TARGET"
+
+
+def test_cpr_thresholds_must_rise() -> None:
+    with pytest.raises(ValueError, match="must rise"):
+        StrategyOptions(cpr_thresholds=(0.5, 0.25, 0.75))
+    with pytest.raises(ValueError, match="must rise"):
+        StrategyOptions(cpr_thresholds=(0, 0.25, 0.75))
+
+
+def test_opening_bias_sets_the_day_direction() -> None:
+    # Monday's CPR (100 to 101.33) is below Thursday's (105 to 107) and the open, 100.5, is below
+    # TC: Bear Accept, so shorts only.
+    decision = evaluate(
+        intraday_frame(LONG_AT_DAILY_MTZ), daily_frame(), with_options(day_direction=True)
+    )[2]
+    assert decision.context["day_direction"] == {"side": "short", "source": "opening_bias"}
+    assert decision.action == DecisionAction.HOLD
+    assert decision.reason_codes == ["AGAINST_DAY_DIRECTION", "OR_LONG", "AT_DAILY_MTZ"]
+
+
+def outside_cpr_daily() -> pl.DataFrame:
+    """Friday high 111, low 97, close 110: Monday's CPR (104 to 108) is outside Thursday's
+    (105 to 107), which gives no direction."""
+    rows = [*WEEK_BEFORE[:-1], (date(2025, 6, 13), 104, 111, 97, 110), (MONDAY, 105, 106, 104, 105)]
+    return pl.DataFrame(rows, schema=["trading_date", "open", "high", "low", "close"], orient="row")
+
+
+def test_without_a_bias_a_15_minute_close_beyond_the_cpr_sets_the_direction() -> None:
+    bars = [
+        (105.0, 105.5, 104.8, 105.2),
+        (105.2, 108.6, 105.1, 108.5),  # closes above TC, but not at a 15-minute close
+        (108.5, 108.7, 108.3, 108.4),  # 9:25 to 9:30: the first 15-minute close
+        (108.4, 108.5, 107.0, 107.2),  # back inside the CPR: the direction stays
+    ]
+    parameters = with_options(day_direction=True)
+    decisions = evaluate(intraday_frame(bars), outside_cpr_daily(), parameters)
+    assert decisions[0].context["cpr_daily"]["relationship"] == "outside"
+    sides = [d.context["day_direction"] for d in decisions]
+    assert sides[1] == {"side": None, "source": None}
+    assert sides[2] == sides[3] == {"side": "long", "source": "cpr_break_15m"}
+
+
+def test_on_15_minute_candles_every_close_counts() -> None:
+    bars = [(105.0, 105.5, 104.8, 105.2), (105.2, 105.3, 103.5, 103.7)]
+    start = datetime(2025, 6, 16, 9, 15, tzinfo=EXCHANGE_TZ)
+    frame = intraday_frame(bars).with_columns(
+        pl.Series("timestamp", [start, start + timedelta(minutes=15)])
+    )
+    decisions = evaluate(
+        frame, outside_cpr_daily(), with_options(day_direction=True), timedelta(minutes=15)
+    )
+    assert decisions[1].context["day_direction"] == {"side": "short", "source": "cpr_break_15m"}
+
+
+# ADR(3) before Monday is (8 + 8 + 10) / 3 = 8.67. Monday falls from 101 to 90.5: the move down
+# completes the ADR on the third candle, which also touches S2 (90.67).
+ADR_DOWN = [
+    (100.5, 101.0, 99.0, 99.2),
+    (99.2, 99.3, 95.0, 95.5),
+    (95.5, 95.8, 90.5, 91.0),
+]
+
+
+def test_completing_the_adr_trades_against_the_move() -> None:
+    parameters = with_options(adr_length=3, adr_trade=True, day_direction=True)
+    decisions = evaluate(intraday_frame(ADR_DOWN), daily_frame(), parameters)
+    assert [d.action for d in decisions] == [
+        DecisionAction.HOLD,
+        DecisionAction.HOLD,
+        DecisionAction.BUY,
+    ]
+    # Long although the day is shorts only and S2 was touched: the ADR trade overrides both.
+    signal = decisions[2].signal
+    assert signal is not None
+    assert signal.patterns == ["ADR"]
+    assert signal.stop_loss == 90.5
+    assert signal.target == pytest.approx(100.0)  # the daily MTZ's near edge
+    assert decisions[2].reason_codes == [
+        "ADR_COMPLETE",
+        "ADR_LONG",
+        "TARGET_DAILY_MTZ",
+        "EXIT_MTZ_TARGET",
+    ]
+
+
+def test_the_adr_trade_is_taken_on_sideways_days_but_not_trending_ones() -> None:
+    parameters = with_options(adr_length=3, adr_trade=True)
+    sideways = evaluate(intraday_frame(ADR_DOWN), daily_frame(friday_close=100.9), parameters)
+    assert sideways[2].action == DecisionAction.BUY
+    trending = evaluate(intraday_frame(ADR_DOWN), daily_frame(friday_close=100.3), parameters)
+    assert trending[2].action == DecisionAction.HOLD
+    assert "ADR_COMPLETE" not in trending[2].reason_codes
+
+
+def test_the_adr_trade_is_once_a_day_and_off_when_not_chosen() -> None:
+    later = [*ADR_DOWN, (91.0, 91.2, 89.0, 89.5)]
+    decisions = evaluate(
+        intraday_frame(later), daily_frame(), with_options(adr_length=3, adr_trade=True)
+    )
+    assert "ADR_COMPLETE" not in decisions[3].reason_codes
+    off = evaluate(intraday_frame(ADR_DOWN), daily_frame(), with_options(adr_length=3))
+    assert off[2].action == DecisionAction.HOLD

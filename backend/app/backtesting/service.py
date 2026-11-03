@@ -324,8 +324,11 @@ def _decision_row(job_id: uuid.UUID, record: BarRecord) -> dict[str, Any]:
 
 def _labels(trade: ClosedTrade) -> dict[str, str | None]:
     """Decision-time condition labels, plus how the trade ended, for per-condition results."""
+    direction = trade.entry_context.get("day_direction") or {}
     return {
         **regimes.labels(trade.entry_context, trade.entry_time),
+        "opening_bias": (trade.entry_context.get("cpr_daily") or {}).get("bias"),
+        "day_direction": direction.get("source"),
         "exit_reason": trade.exit_reason,
     }
 

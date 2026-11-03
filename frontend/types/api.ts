@@ -127,10 +127,14 @@ export interface Backtest {
 export type Pattern = "OR" | "DR" | "ER" | "WR";
 export type MtzChoice = "daily" | "weekly" | "both";
 
-/** Empty for backtests made before options existed: all patterns, both MTZs. */
+/** Empty for backtests made before options existed: all patterns, both MTZs. The later options are
+ * missing from older runs, which used the script's thresholds without day direction or ADR trades. */
 export interface StrategyOptions {
   entry_patterns: Pattern[];
   mtz: MtzChoice;
+  cpr_thresholds?: [number, number, number];
+  day_direction?: boolean;
+  adr_trade?: boolean;
 }
 
 export interface BacktestListItem extends Backtest {

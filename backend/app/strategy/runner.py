@@ -56,7 +56,7 @@ def iter_evaluations(
     its session has ended; of the current session's daily candle, only the open is used before the
     final bar. A bar is flagged final when it closes at the scheduled session close.
     """
-    strategy = MtzReversalStrategy(parameters)
+    strategy = MtzReversalStrategy(parameters, bar)
     daily_rows = {
         row["trading_date"]: row for row in daily.sort("trading_date").iter_rows(named=True)
     }

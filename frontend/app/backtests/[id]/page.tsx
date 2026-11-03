@@ -23,6 +23,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   adr_usage: "ADR used",
   cpr_width: "CPR width",
   setup: "Reversal pattern",
+  opening_bias: "Opening bias",
+  day_direction: "Day direction from",
   exit_reason: "Exit reason",
 };
 
@@ -31,6 +33,7 @@ const PATTERN_NAMES: Record<string, string> = {
   DR: "Doji reversal (DR)",
   ER: "Extreme reversal (ER)",
   WR: "Wick reversal (WR)",
+  ADR: "ADR trade",
 };
 
 export default function BacktestResultsPage() {

@@ -57,13 +57,26 @@ export function bytes(size: number | null | undefined): string {
 
 const MTZ_LABELS = { daily: "daily MTZ", weekly: "weekly MTZ", both: "daily + weekly MTZ" } as const;
 
-/** Timeframe, entry patterns and MTZ choice, for example "15 min · OR, WR · daily MTZ". */
-export function strategyOptions(backtest: Backtest): { timeframe: string; patterns: string; mtz: string } {
+/** A backtest's options as short labels, for example "15 min", "OR, WR", "daily MTZ". */
+export function strategyOptions(backtest: Backtest): {
+  timeframe: string;
+  patterns: string;
+  mtz: string;
+  cpr: string;
+  rules: string;
+} {
   const options = backtest.strategy_options;
   const patterns = "entry_patterns" in options ? options.entry_patterns : null;
+  const thresholds = "cpr_thresholds" in options && options.cpr_thresholds ? options.cpr_thresholds : [0.25, 0.5, 0.75];
+  const rules = [
+    "day_direction" in options && options.day_direction ? "day direction" : null,
+    "adr_trade" in options && options.adr_trade ? "ADR trade" : null,
+  ].filter(Boolean);
   return {
     timeframe: backtest.timeframe === "15m" ? "15 min" : "5 min",
     patterns: !patterns || patterns.length === 4 ? "All patterns" : patterns.join(", "),
     mtz: MTZ_LABELS["mtz" in options ? options.mtz : "both"],
+    cpr: `CPR ${thresholds.join(" / ")}%`,
+    rules: rules.length ? rules.join(", ") : "no direction or ADR rules",
   };
 }

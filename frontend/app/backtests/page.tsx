@@ -24,7 +24,7 @@ export default function BacktestsPage() {
         ) : !data?.length ? (
           <Empty>No backtests yet. Create one once market data and a strategy version exist.</Empty>
         ) : (
-          <Table columns={["Backtest", "Range", "Timeframe", "Patterns", "MTZ", "Trades", "Win rate", "Net points", "Profit factor", "Status", "Created"]}>
+          <Table columns={["Backtest", "Range", "Timeframe", "Patterns", "MTZ", "CPR / rules", "Trades", "Win rate", "Net points", "Profit factor", "Status", "Created"]}>
             {data.map((b) => {
               const options = strategyOptions(b);
               const s = b.summary;
@@ -35,6 +35,10 @@ export default function BacktestsPage() {
                   <Td>{options.timeframe}</Td>
                   <Td>{options.patterns}</Td>
                   <Td>{options.mtz}</Td>
+                  <Td>
+                    {options.cpr}
+                    <p className="text-xs text-muted">{options.rules}</p>
+                  </Td>
                   <Td>{s ? s.total_trades : ""}</Td>
                   <Td>{s ? percent(s.win_rate) : ""}</Td>
                   <Td className={s ? (s.net_points >= 0 ? "text-gain" : "text-loss") : undefined}>{s ? signedPoints(s.net_points) : ""}</Td>

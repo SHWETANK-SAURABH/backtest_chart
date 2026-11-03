@@ -120,12 +120,15 @@ def cpr_band(previous: PeriodBar | None) -> tuple[float, float]:
     return tc, bc
 
 
-def histogram(width_percent: float) -> str:
-    if width_percent < 0.25:
+def histogram(
+    width_percent: float, thresholds: tuple[float, float, float] = (0.25, 0.50, 0.75)
+) -> str:
+    trending, possible, sideways = thresholds
+    if width_percent < trending:
         return HIST_TRENDING
-    if width_percent < 0.50:
+    if width_percent < possible:
         return HIST_POSSIBLE
-    if width_percent < 0.75:
+    if width_percent < sideways:
         return HIST_SIDEWAYS
     return HIST_SIDEWAYS_TRADE
 

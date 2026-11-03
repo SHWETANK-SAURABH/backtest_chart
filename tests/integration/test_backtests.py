@@ -341,11 +341,22 @@ def test_create_backtest_records_options_and_lists_results(
         json=request_body(
             setup,
             timeframe="15m",
-            strategy_options={"entry_patterns": ["WR", "OR"], "mtz": "weekly"},
+            strategy_options={
+                "entry_patterns": ["WR", "OR"],
+                "mtz": "weekly",
+                "cpr_thresholds": [0.1, 0.2, 0.3],
+                "adr_trade": False,
+            },
         ),
     ).json()
     assert body["timeframe"] == "15m"
-    assert body["strategy_options"] == {"entry_patterns": ["OR", "WR"], "mtz": "weekly"}
+    assert body["strategy_options"] == {
+        "entry_patterns": ["OR", "WR"],
+        "mtz": "weekly",
+        "cpr_thresholds": [0.1, 0.2, 0.3],
+        "day_direction": True,
+        "adr_trade": False,
+    }
 
     BacktestService(db, setup["store"]).run(body["id"])
     listed = {b["id"]: b for b in client.get("/api/v1/backtests").json()}[body["id"]]
@@ -364,6 +375,7 @@ def test_create_backtest_records_options_and_lists_results(
         {"strategy_options": {"entry_patterns": []}},
         {"strategy_options": {"entry_patterns": ["XX"]}},
         {"strategy_options": {"mtz": "monthly"}},
+        {"strategy_options": {"cpr_thresholds": [0.5, 0.25, 0.75]}},
     ],
 )
 def test_invalid_options_are_refused(client: TestClient, setup: dict, changes: dict) -> None:
