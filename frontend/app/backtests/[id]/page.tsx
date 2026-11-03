@@ -34,6 +34,13 @@ const PATTERN_NAMES: Record<string, string> = {
   ER: "Extreme reversal (ER)",
   WR: "Wick reversal (WR)",
   ADR: "ADR trade",
+  BREAKAWAY: "Breakaway",
+  MAGNET: "Magnet (gap fill)",
+  CPR_PULLBACK: "CPR pull-back",
+  CPR_FADE: "CPR fade (rejected open)",
+  FLOOR_PIVOT: "Floor pivot, trend filtered",
+  CAM_REVERSAL: "Camarilla H3/L3 reversal",
+  CAM_BREAKOUT: "Camarilla H4/L4 breakout",
 };
 
 export default function BacktestResultsPage() {

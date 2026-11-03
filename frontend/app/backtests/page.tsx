@@ -24,13 +24,14 @@ export default function BacktestsPage() {
         ) : !data?.length ? (
           <Empty>No backtests yet. Create one once market data and a strategy version exist.</Empty>
         ) : (
-          <Table columns={["Backtest", "Range", "Timeframe", "Patterns", "MTZ", "CPR / rules", "Trades", "Win rate", "Net points", "Profit factor", "Status", "Created"]}>
+          <Table columns={["Backtest", "Strategy", "Range", "Timeframe", "Patterns", "MTZ / setups", "CPR / rules", "Trades", "Win rate", "Net points", "Profit factor", "Status", "Created"]}>
             {data.map((b) => {
               const options = strategyOptions(b);
               const s = b.summary;
               return (
                 <tr key={b.id}>
                   <Td><Link className="text-accent hover:underline" href={`/backtests/${b.id}`}>{shortId(b.id)}</Link></Td>
+                  <Td>{options.strategy}</Td>
                   <Td>{b.start_date} to {b.end_date}</Td>
                   <Td>{options.timeframe}</Td>
                   <Td>{options.patterns}</Td>

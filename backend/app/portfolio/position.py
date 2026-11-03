@@ -20,6 +20,9 @@ class Position:
     entry_notes: list[str] = field(default_factory=list)
     # Exit when a candle of the opposite colour closes beyond the fast EMA.
     ema_trail: bool = False
+    # Move the stop each candle to the strategy's ATR trail level, never backwards.
+    atr_trail: bool = False
+    trailed: bool = False
 
     def points(self, exit_price: float) -> float:
         if self.side == Side.LONG:

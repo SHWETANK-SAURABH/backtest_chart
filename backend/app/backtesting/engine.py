@@ -16,6 +16,9 @@ Assumptions, recorded with every trade:
 - A trade without a target (Trending CPR) exits at the close of the first candle of the opposite
   colour that closes beyond the fast EMA: red and below it for a long, green and above it for a
   short. The stop still applies, and is checked first.
+- An ATR-trailed trade (Pivot Boss breakaway) moves its stop after each candle's close to that
+  candle's trail level (close minus 1.5 ATR for a long), never backwards. The new stop applies from
+  the next candle; a trade stopped after the stop has moved exits as TRAILING_STOP.
 - There is one position at a time. Signals while a position is open, or in the opposite direction,
   are ignored.
 - No position is held overnight.
@@ -37,6 +40,7 @@ from app.strategy.engine import Decision
 
 BAR = timedelta(minutes=BAR_MINUTES)
 EMA_TRAIL = "EXIT_EMA_TRAIL"
+ATR_TRAIL = "EXIT_ATR_TRAIL"
 
 
 class Evaluation(Protocol):
@@ -67,6 +71,7 @@ class PendingEntry:
     reasons: list[str]
     context: dict[str, Any]
     ema_trail: bool = False
+    atr_trail: bool = False
 
 
 @dataclass
@@ -115,6 +120,7 @@ class BacktestEngine:
             "same_candle_policy": self.execution.same_candle_policy.value,
             "intrabar_exit_time": "close of the candle that touched the level",
             "ema_trail_exit": "close of the opposite-colour candle that closed beyond the 5 EMA",
+            "atr_trail": "stop moved after each close to close -/+ 1.5 ATR(14), never backwards",
             "positions": "one at a time, intraday only",
             "cost_model": self.cost_model.code,
             "units": "theoretical NIFTY 50 index points, not rupees",
@@ -216,6 +222,7 @@ class _Run:
             entry_reasons=signal.reasons,
             entry_context=signal.context,
             ema_trail=signal.ema_trail,
+            atr_trail=signal.atr_trail,
         )
         self.risk.record_entry(record.decision.trading_date)
         record.trade_opened = True
@@ -237,16 +244,19 @@ class _Run:
 
         stop_hit = bar.low <= stop if long else bar.high >= stop
         target_hit = target is not None and (bar.high >= target if long else bar.low <= target)
+        stop_reason = "TRAILING_STOP" if position.trailed else "STOP_LOSS"
         if stop_hit and target_hit:
             record.execution_notes.append("STOP_AND_TARGET_SAME_CANDLE_STOP_ASSUMED")
-            self._close(record, stop, "STOP_LOSS", market=True, ambiguous=True)
+            self._close(record, stop, stop_reason, market=True, ambiguous=True)
         elif stop_hit:
-            self._close(record, stop, "STOP_LOSS", market=True)
+            self._close(record, stop, stop_reason, market=True)
         elif target_hit:
             assert target is not None
             self._close(record, target, "TARGET", market=False)
         elif position.ema_trail and _closed_beyond_ema(bar, long):
             self._close(record, bar.close, "EMA_TRAIL_EXIT", market=True)
+        elif position.atr_trail:
+            _trail_stop(position, bar, long)
 
     def _act_on_decision(self, record: BarRecord, final_bar: bool) -> None:
         decision = record.decision
@@ -272,6 +282,7 @@ class _Run:
             decision.reason_codes,
             decision.context,
             ema_trail=decision.signal.exit_mode == EMA_TRAIL,
+            atr_trail=decision.signal.exit_mode == ATR_TRAIL,
         )
         if self.settings.method == ExecutionMethod.NEXT_OPEN:
             self.pending = entry
@@ -326,6 +337,16 @@ class _Run:
         self.equity.append((exit_time, self.cumulative))
         self.position = None
         record.position_closed = True
+
+
+def _trail_stop(position: Position, bar: Decision, long: bool) -> None:
+    """Move the stop to this candle's ATR trail level if that tightens it."""
+    level = (bar.context.get("atr_trail") or {}).get("long" if long else "short")
+    if level is None:
+        return
+    if (long and level > position.stop_loss) or (not long and level < position.stop_loss):
+        position.stop_loss = level
+        position.trailed = True
 
 
 def _closed_beyond_ema(bar: Decision, long: bool) -> bool:

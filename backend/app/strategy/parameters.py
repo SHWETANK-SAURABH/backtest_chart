@@ -8,8 +8,18 @@ from app.strategy.periods import Period
 
 STRATEGY_NAME = "MTZ Reversal"
 # Bump when strategy behaviour changes. The code hash also changes with any source edit.
-IMPLEMENTATION_VERSION = "3.0.0"
+IMPLEMENTATION_VERSION = "4.0.0"
 PATTERNS = ("OR", "DR", "ER", "WR")
+# Pivot Boss setups, in the order they are checked when several fire on one candle.
+BOOK_SETUPS = (
+    "BREAKAWAY",
+    "MAGNET",
+    "CPR_PULLBACK",
+    "CPR_FADE",
+    "FLOOR_PIVOT",
+    "CAM_REVERSAL",
+    "CAM_BREAKOUT",
+)
 # The script's CPR width histogram bounds, in percent: Trending, Possible Trending, Sideways.
 CPR_THRESHOLDS = (0.25, 0.50, 0.75)
 
@@ -28,6 +38,14 @@ class StrategyParameters(BaseModel):
     cpr_thresholds: tuple[float, float, float] = CPR_THRESHOLDS
     day_direction: bool = False
     adr_trade: bool = False
+    strategy: str = "mtz_reversal"
+    book_setups: tuple[str, ...] = BOOK_SETUPS
+    weekly_filter: bool = True
+
+
+class StrategyKind(StrEnum):
+    MTZ_REVERSAL = "mtz_reversal"
+    PIVOT_BOSS = "pivot_boss"
 
 
 class MtzChoice(StrEnum):
@@ -48,6 +66,7 @@ class StrategyOptions(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    strategy: StrategyKind = StrategyKind.MTZ_REVERSAL
     entry_patterns: tuple[str, ...] = PATTERNS
     mtz: MtzChoice = MtzChoice.BOTH
     cpr_thresholds: tuple[float, float, float] = CPR_THRESHOLDS
@@ -55,6 +74,9 @@ class StrategyOptions(BaseModel):
     day_direction: bool = True
     # One trade against the move once the day's range reaches the ADR.
     adr_trade: bool = True
+    # Pivot Boss only: which setups may enter, and trading only with the weekly bias.
+    book_setups: tuple[str, ...] = BOOK_SETUPS
+    weekly_filter: bool = True
 
     @field_validator("entry_patterns")
     @classmethod
@@ -66,6 +88,16 @@ class StrategyOptions(BaseModel):
             raise ValueError("Choose at least one entry pattern")
         # Stored in a fixed order, so the same choice always hashes the same.
         return tuple(p for p in PATTERNS if p in value)
+
+    @field_validator("book_setups")
+    @classmethod
+    def check_setups(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        unknown = set(value) - set(BOOK_SETUPS)
+        if unknown:
+            raise ValueError(f"Unknown setups: {', '.join(sorted(unknown))}")
+        if not value:
+            raise ValueError("Choose at least one setup")
+        return tuple(s for s in BOOK_SETUPS if s in value)
 
     @field_validator("cpr_thresholds")
     @classmethod
@@ -82,5 +114,8 @@ class StrategyOptions(BaseModel):
                 "cpr_thresholds": self.cpr_thresholds,
                 "day_direction": self.day_direction,
                 "adr_trade": self.adr_trade,
+                "strategy": self.strategy.value,
+                "book_setups": self.book_setups,
+                "weekly_filter": self.weekly_filter,
             }
         )

@@ -45,6 +45,9 @@ class PeriodLevels:
     open: float
     cpr: CprLevels
     camarilla: CamarillaLevels
+    # The previous period's own CPR band, which the relationship compares against.
+    prev_tc: float
+    prev_bc: float
 
 
 class PeriodAggregator:
@@ -87,4 +90,6 @@ class PeriodAggregator:
             open=current_open,
             cpr=calculate_cpr(previous, current_open, prev_tc, prev_bc),
             camarilla=calculate_camarilla(previous, current_open, prev_h3, prev_l3),
+            prev_tc=prev_tc,
+            prev_bc=prev_bc,
         )

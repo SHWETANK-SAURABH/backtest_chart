@@ -6,13 +6,33 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select } from "@/components/ui";
 import { useApi } from "@/hooks/use-api";
 import { get, post } from "@/services/client";
-import type { Backtest, MarketDataHealth, Pattern, Strategy, StrategyDetail, StrategyVersion } from "@/types/api";
+import { BOOK_SETUP_NAMES } from "@/lib/format";
+import type {
+  Backtest,
+  BookSetup,
+  MarketDataHealth,
+  Pattern,
+  Strategy,
+  StrategyDetail,
+  StrategyKind,
+  StrategyVersion,
+} from "@/types/api";
 
 const PATTERNS: { code: Pattern; name: string }[] = [
   { code: "OR", name: "Outside reversal" },
   { code: "DR", name: "Doji reversal" },
   { code: "ER", name: "Extreme reversal" },
   { code: "WR", name: "Wick reversal" },
+];
+
+const BOOK_SETUPS: { code: BookSetup; rule: string }[] = [
+  { code: "BREAKAWAY", rule: "Narrow CPR; open gaps beyond the prior high/low and R1/S1, not past R2/S2; first candle tests the pivot and holds. Stop: day's extreme. Target R3/S3 with a 1.5 ATR trail." },
+  { code: "MAGNET", rule: "The script's magnet gap; a reversal candle toward the CPR in the first hour. Stop: day's extreme. Target: the CPR." },
+  { code: "CPR_PULLBACK", rule: "Bias confirmed by the open and a Higher/Lower Value relationship; a reversal candle at the CPR before 11:15. Stop: far side of the CPR. Target R1/S1." },
+  { code: "CPR_FADE", rule: "The open rejects the bias: a reversal candle at the CPR the other way. Stop: that candle. Target S1/R1." },
+  { code: "FLOOR_PIVOT", rule: "Prior two closes on the same side of their CPRs: a reversal candle at the CPR or S1 (R1 in a downtrend). Stop beyond the level. Target R1/S1." },
+  { code: "CAM_REVERSAL", rule: "Wick through L3/H3 closing back inside, then a confirming candle. Stop L4/H4. Target H3/L3." },
+  { code: "CAM_BREAKOUT", rule: "After a failed test of H4/L4, the first close beyond it and beyond the test's high/low. Stop H3/L3. Target H5/L5." },
 ];
 
 export default function NewBacktestPage() {
@@ -23,6 +43,9 @@ export default function NewBacktestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [patterns, setPatterns] = useState<Pattern[]>(PATTERNS.map((p) => p.code));
+  const [kind, setKind] = useState<StrategyKind>("mtz_reversal");
+  const [setups, setSetups] = useState<BookSetup[]>(BOOK_SETUPS.map((s) => s.code));
+  const book = kind === "pivot_boss";
 
   useEffect(() => {
     if (!strategies.data) return;
@@ -54,11 +77,15 @@ export default function NewBacktestPage() {
         end_date: form.get("end_date"),
         timeframe: form.get("timeframe"),
         strategy_options: {
+          strategy: kind,
+          book_setups: setups,
+          weekly_filter: form.get("weekly_filter") === "on",
           entry_patterns: patterns,
-          mtz: form.get("mtz"),
+          mtz: form.get("mtz") ?? "both",
           cpr_thresholds: ["cpr_trending", "cpr_possible", "cpr_sideways"].map((name) => Number(form.get(name))),
-          day_direction: form.get("day_direction") === "on",
-          adr_trade: form.get("adr_trade") === "on",
+          // Only the MTZ reversal reads these; the defaults are sent for the book strategy.
+          day_direction: book || form.get("day_direction") === "on",
+          adr_trade: book || form.get("adr_trade") === "on",
         },
         execution: { method: form.get("method"), slippage_points: Number(form.get("slippage_points") || 0) },
         risk: { max_trades_per_day: optional("max_trades_per_day"), max_daily_loss_points: optional("max_daily_loss_points") },
@@ -108,9 +135,15 @@ export default function NewBacktestPage() {
           </Card>
 
           <Card title="Entries and exits">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Strategy" hint="The book strategy follows prompt/mainbook.txt where it differs from book.txt.">
+              <Select value={kind} onChange={(e) => setKind(e.target.value as StrategyKind)}>
+                <option value="mtz_reversal">MTZ reversal (current)</option>
+                <option value="pivot_boss">Pivot Boss (book)</option>
+              </Select>
+            </Field>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <fieldset className="text-sm">
-                <legend className="mb-1 text-ink-2">Entry patterns</legend>
+                <legend className="mb-1 text-ink-2">{book ? "Reversal candle triggers" : "Entry patterns"}</legend>
                 <div className="grid grid-cols-2 gap-1">
                   {PATTERNS.map((p) => (
                     <label key={p.code} className="flex items-center gap-2">
@@ -129,14 +162,52 @@ export default function NewBacktestPage() {
                 </div>
                 {patterns.length === 0 && <p className="mt-1 text-xs text-critical">Choose at least one pattern.</p>}
               </fieldset>
-              <Field label="Entry zones (MTZ)" hint="Entries come from these zones; the target can be any other MTZ, daily or weekly.">
-                <Select name="mtz" defaultValue="both">
-                  <option value="both">Daily and weekly MTZ</option>
-                  <option value="daily">Daily MTZ only</option>
-                  <option value="weekly">Weekly MTZ only</option>
-                </Select>
-              </Field>
+              {book ? (
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" name="weekly_filter" defaultChecked className="mt-1" />
+                  <span>
+                    Weekly trend filter
+                    <span className="block text-xs text-muted">
+                      Longs only when last week closed at or above its CPR, shorts only at or below it.
+                    </span>
+                  </span>
+                </label>
+              ) : (
+                <Field label="Entry zones (MTZ)" hint="Entries come from these zones; the target can be any other MTZ, daily or weekly.">
+                  <Select name="mtz" defaultValue="both">
+                    <option value="both">Daily and weekly MTZ</option>
+                    <option value="daily">Daily MTZ only</option>
+                    <option value="weekly">Weekly MTZ only</option>
+                  </Select>
+                </Field>
+              )}
             </div>
+            {book && (
+              <fieldset className="mt-4 text-sm">
+                <legend className="mb-1 text-ink-2">Book setups</legend>
+                <div className="space-y-2">
+                  {BOOK_SETUPS.map((s) => (
+                    <label key={s.code} className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={setups.includes(s.code)}
+                        onChange={(e) =>
+                          setSetups((current) =>
+                            e.target.checked ? [...current, s.code] : current.filter((c) => c !== s.code),
+                          )
+                        }
+                      />
+                      <span>
+                        {BOOK_SETUP_NAMES[s.code]}
+                        <span className="block text-xs text-muted">{s.rule}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {setups.length === 0 && <p className="mt-1 text-xs text-critical">Choose at least one setup.</p>}
+              </fieldset>
+            )}
             <fieldset className="mt-4 text-sm">
               <legend className="mb-1 text-ink-2">Daily CPR width thresholds (%)</legend>
               <div className="grid gap-3 sm:grid-cols-3">
@@ -152,7 +223,7 @@ export default function NewBacktestPage() {
               </div>
               <p className="mt-1 text-xs text-muted">The script&apos;s values are 0.25, 0.50 and 0.75. Each must be above the one before.</p>
             </fieldset>
-            <div className="mt-4 space-y-2 text-sm">
+            <div className={book ? "hidden" : "mt-4 space-y-2 text-sm"}>
               <label className="flex items-start gap-2">
                 <input type="checkbox" name="day_direction" defaultChecked className="mt-1" />
                 <span>
@@ -172,11 +243,19 @@ export default function NewBacktestPage() {
                 </span>
               </label>
             </div>
+            {book ? (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted">
+                <li>Daily bias: yesterday&apos;s close against its own CPR. Narrow days are Trending and Possible Trending by the thresholds above.</li>
+                <li>Setups are checked in the order listed; the first valid one enters. A setup is skipped when price is already beyond its stop or target.</li>
+                <li>Open trades exit at the session&apos;s close. The book suggests at most 2 trades a day: set it under Risk if wanted.</li>
+              </ul>
+            ) : (
             <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted">
               <li>No new entries once price touches the daily R2 or S2.</li>
               <li>Exit by the daily CPR histogram: Sideways, no trades that day; Sideways Trading, target the next MTZ; Trending and Possible Trending, no target, exit when an opposite-colour candle closes beyond the 5 EMA.</li>
               <li>The stop is always the signal candle&apos;s low (long) or high (short).</li>
             </ul>
+            )}
           </Card>
 
           <Card title="Execution">
@@ -207,7 +286,7 @@ export default function NewBacktestPage() {
             </div>
           </Card>
 
-          <Button type="submit" disabled={submitting || !intraday || !daily || versions.length === 0 || patterns.length === 0}>
+          <Button type="submit" disabled={submitting || !intraday || !daily || versions.length === 0 || patterns.length === 0 || (book && setups.length === 0)}>
             {submitting ? "Starting…" : "Run backtest"}
           </Button>
         </form>

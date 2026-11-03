@@ -330,6 +330,16 @@ def test_strategy_options_change_the_inputs_and_the_trades(db: Session, setup: d
         assert "AT_WEEKLY_MTZ" not in trade.decision_reason
 
 
+def test_pivot_boss_backtest_runs_with_only_the_chosen_setups(db: Session, setup: dict) -> None:
+    options = StrategyOptions(strategy="pivot_boss", book_setups=("CAM_REVERSAL", "CPR_FADE"))
+    job = make_job(db, setup, options=options)
+    assert job.input_hash != make_job(db, setup).input_hash
+    BacktestService(db, setup["store"]).run(job.id)
+    assert job.status == JobStatus.COMPLETED, job.error
+    for trade in db.scalars(select(Trade).where(Trade.backtest_job_id == job.id)):
+        assert trade.decision_reason[0].rsplit("_", 1)[0] in ("CAM_REVERSAL", "CPR_FADE")
+
+
 def test_create_backtest_records_options_and_lists_results(
     client: TestClient, setup: dict, db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -351,6 +361,17 @@ def test_create_backtest_records_options_and_lists_results(
     ).json()
     assert body["timeframe"] == "15m"
     assert body["strategy_options"] == {
+        "strategy": "mtz_reversal",
+        "book_setups": [
+            "BREAKAWAY",
+            "MAGNET",
+            "CPR_PULLBACK",
+            "CPR_FADE",
+            "FLOOR_PIVOT",
+            "CAM_REVERSAL",
+            "CAM_BREAKOUT",
+        ],
+        "weekly_filter": True,
         "entry_patterns": ["OR", "WR"],
         "mtz": "weekly",
         "cpr_thresholds": [0.1, 0.2, 0.3],
@@ -376,6 +397,8 @@ def test_create_backtest_records_options_and_lists_results(
         {"strategy_options": {"entry_patterns": ["XX"]}},
         {"strategy_options": {"mtz": "monthly"}},
         {"strategy_options": {"cpr_thresholds": [0.5, 0.25, 0.75]}},
+        {"strategy_options": {"strategy": "other"}},
+        {"strategy_options": {"book_setups": []}},
     ],
 )
 def test_invalid_options_are_refused(client: TestClient, setup: dict, changes: dict) -> None:

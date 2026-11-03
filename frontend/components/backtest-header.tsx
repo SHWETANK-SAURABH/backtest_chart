@@ -29,7 +29,7 @@ export function BacktestHeader({ backtest, onChange }: { backtest: BacktestDetai
             Backtest {shortId(backtest.id)} <StatusBadge status={backtest.status} />
           </h1>
           <p className="mt-1 text-sm text-ink-2">
-            {backtest.start_date} to {backtest.end_date} · {options.timeframe} · {options.patterns} · {options.mtz} · {options.cpr} · {options.rules} ·{" "}
+            {options.strategy} · {backtest.start_date} to {backtest.end_date} · {options.timeframe} · {options.patterns} · {options.mtz} · {options.cpr} · {options.rules} ·{" "}
             {backtest.execution_method === "signal_close" ? "signal close fills (idealised)" : "next open fills"} · slippage{" "}
             {String(backtest.execution_settings.slippage_points ?? 0)} pts · <PointsNotice />
           </p>

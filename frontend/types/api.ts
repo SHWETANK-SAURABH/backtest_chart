@@ -126,6 +126,15 @@ export interface Backtest {
 
 export type Pattern = "OR" | "DR" | "ER" | "WR";
 export type MtzChoice = "daily" | "weekly" | "both";
+export type StrategyKind = "mtz_reversal" | "pivot_boss";
+export type BookSetup =
+  | "BREAKAWAY"
+  | "MAGNET"
+  | "CPR_PULLBACK"
+  | "CPR_FADE"
+  | "FLOOR_PIVOT"
+  | "CAM_REVERSAL"
+  | "CAM_BREAKOUT";
 
 /** Empty for backtests made before options existed: all patterns, both MTZs. The later options are
  * missing from older runs, which used the script's thresholds without day direction or ADR trades. */
@@ -135,6 +144,9 @@ export interface StrategyOptions {
   cpr_thresholds?: [number, number, number];
   day_direction?: boolean;
   adr_trade?: boolean;
+  strategy?: StrategyKind;
+  book_setups?: BookSetup[];
+  weekly_filter?: boolean;
 }
 
 export interface BacktestListItem extends Backtest {

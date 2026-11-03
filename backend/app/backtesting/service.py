@@ -334,7 +334,8 @@ def _labels(trade: ClosedTrade) -> dict[str, str | None]:
 
 
 def _patterns(reason_codes: list[str]) -> list[str]:
-    return [code.split("_")[0] for code in reason_codes if code.endswith(("_LONG", "_SHORT"))]
+    # "OR_LONG" gives "OR"; Pivot Boss setups such as "CPR_PULLBACK_LONG" give "CPR_PULLBACK".
+    return [code.rsplit("_", 1)[0] for code in reason_codes if code.endswith(("_LONG", "_SHORT"))]
 
 
 def _context_row(decision_id: int, decision: Decision) -> dict[str, Any]:

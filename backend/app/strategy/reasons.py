@@ -12,6 +12,15 @@ PATTERN_NAMES = {
     "WR": "wick reversal",
 }
 ZONE_NAMES = {"DAILY_MTZ": "daily MTZ", "WEEKLY_MTZ": "weekly MTZ"}
+BOOK_SETUP_NAMES = {
+    "BREAKAWAY": "Breakaway",
+    "MAGNET": "Magnet (gap fill)",
+    "CPR_PULLBACK": "CPR pull-back",
+    "CPR_FADE": "CPR fade after a rejected open",
+    "FLOOR_PIVOT": "Floor pivot, trend filtered",
+    "CAM_REVERSAL": "Camarilla H3/L3 reversal",
+    "CAM_BREAKOUT": "Camarilla H4/L4 breakout",
+}
 
 MESSAGES = {
     "NO_MTZ_LEVELS": "No MTZ levels yet: not enough completed daily history.",
@@ -38,6 +47,12 @@ MESSAGES = {
     "ADR_DIRECTION_UNCLEAR": "The candle completing the ADR made both the high and the low.",
     "ADR_LONG": "ADR trade: long against the move down that completed the ADR.",
     "ADR_SHORT": "ADR trade: short against the move up that completed the ADR.",
+    "NO_LEVELS": "No CPR or Camarilla levels yet: not enough completed daily history.",
+    "NO_BOOK_SETUP": "No Pivot Boss setup on this candle.",
+    "AGAINST_WEEKLY_BIAS": "A setup fired against the weekly bias.",
+    "NO_ROOM_TO_TARGET": "A setup fired, but price is already at or beyond its target.",
+    "EXIT_FIXED_TARGET": "Exit at the fixed pivot target.",
+    "EXIT_ATR_TRAIL": "Exit at the target or on a 1.5 ATR trailing stop.",
     "EXIT_EMA_TRAIL": (
         "Trending CPR: no target; exit when a candle of the opposite colour closes beyond the "
         "5 EMA."
@@ -51,10 +66,17 @@ def _describe(code: str) -> str | None:
     pattern, _, side = code.partition("_")
     if pattern in PATTERN_NAMES and side in ("LONG", "SHORT"):
         return f"{PATTERN_NAMES[pattern].capitalize()} ({side.lower()}) confirmed."
+    setup, _, direction = code.rpartition("_")
+    if setup in BOOK_SETUP_NAMES and direction in ("LONG", "SHORT"):
+        return f"{BOOK_SETUP_NAMES[setup]} ({direction.lower()})."
+    if code.startswith("TRIGGER_") and code[8:] in PATTERN_NAMES:
+        return f"Triggered by a {PATTERN_NAMES[code[8:]]}."
     if code.startswith("AT_") and code[3:] in ZONE_NAMES:
         return f"The signal touched the {ZONE_NAMES[code[3:]]}."
     if code.startswith("TARGET_") and code[7:] in ZONE_NAMES:
         return f"Target is the {ZONE_NAMES[code[7:]]}."
+    if code.startswith("TARGET_"):
+        return f"Target is {code[7:]}."
     return None
 
 

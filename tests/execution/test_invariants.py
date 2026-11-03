@@ -16,6 +16,7 @@ from app.backtesting.settings import ExecutionSettings, RiskSettings
 from app.data.ingestion.normalize import to_frame
 from app.domain.candle import EXCHANGE_TZ
 from app.domain.enums import ExecutionMethod, Side
+from app.strategy.parameters import StrategyOptions, StrategyParameters
 from app.strategy.runner import iter_evaluations
 from tests.support.mock_market_data import RandomWalkProvider
 
@@ -27,6 +28,10 @@ SETTINGS = {
         ExecutionSettings(method=ExecutionMethod.NEXT_OPEN, slippage_points=0.5),
         RiskSettings(max_trades_per_day=2, max_daily_loss_points=40),
     ),
+    "pivot_boss": (ExecutionSettings(method=ExecutionMethod.NEXT_OPEN), RiskSettings()),
+}
+PARAMETERS = {
+    "pivot_boss": StrategyOptions(strategy="pivot_boss").apply(StrategyParameters()),
 }
 
 
@@ -47,7 +52,10 @@ def run(name: str, end: date = END) -> BacktestResult:
     intraday, daily = candles()
     execution, risk = SETTINGS[name]
     return BacktestEngine(execution, risk).run(
-        iter_evaluations(intraday.filter(pl.col("trading_date") <= end), daily), trade_from=START
+        iter_evaluations(
+            intraday.filter(pl.col("trading_date") <= end), daily, PARAMETERS.get(name)
+        ),
+        trade_from=START,
     )
 
 
@@ -99,7 +107,8 @@ def test_fills_follow_the_documented_rules(result) -> None:
         bar = bars[t.exit_time if gap else t.exit_time - BAR]
         if t.exit_reason == "TARGET":
             assert t.exit_price == t.target
-        elif t.exit_reason == "STOP_LOSS":
+        elif t.exit_reason in ("STOP_LOSS", "TRAILING_STOP"):
+            # A trailing stop records the level it had moved to.
             assert t.exit_price == pytest.approx(t.stop_loss + worse)
         elif t.exit_reason == "STOP_LOSS_GAP":
             assert t.exit_price == pytest.approx(bar.open + worse)

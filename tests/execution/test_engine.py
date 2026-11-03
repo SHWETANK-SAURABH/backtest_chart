@@ -361,3 +361,38 @@ def test_fifteen_minute_bars_time_exits_by_the_bar_length() -> None:
     assert trade.entry_time == time(0) + timedelta(minutes=15)
     assert trade.exit_time == time(1) + timedelta(minutes=15)
     assert result.assumptions["bar_minutes"] == 15
+
+
+def atr_step(index: int, o: float, h: float, low: float, c: float, trail: float, buy: bool = False):
+    """A candle whose context carries an ATR trail level for longs."""
+    step = bar(index, o, h, low, c)
+    step.decision.context["atr_trail"] = {"long": trail, "short": None}
+    if buy:
+        step.decision.action = BUY
+        step.decision.signal = EntrySignal(
+            "long", ["BREAKAWAY"], ["r1"], h, low, 98.0, 110.0, "r3", "EXIT_ATR_TRAIL"
+        )
+    return step
+
+
+def test_atr_trail_moves_the_stop_up_only_and_exits_as_a_trailing_stop() -> None:
+    result = run(
+        [
+            atr_step(0, 99, 100.5, 98.5, 100, trail=97.0, buy=True),
+            atr_step(1, 100, 103, 99.8, 102.5, trail=100.0),  # stop 98 -> 100
+            atr_step(2, 102.5, 103, 101.5, 102.0, trail=99.0),  # lower level: stop stays 100
+            atr_step(3, 102.0, 102.2, 99.5, 99.8, trail=98.0),  # touches 100
+        ]
+    )
+    [trade] = result.trades
+    assert (trade.exit_reason, trade.exit_price, trade.stop_loss) == ("TRAILING_STOP", 100.0, 100.0)
+
+
+def test_atr_trail_trade_still_takes_its_target() -> None:
+    result = run(
+        [
+            atr_step(0, 99, 100.5, 98.5, 100, trail=97.0, buy=True),
+            atr_step(1, 100, 111, 99.8, 110.5, trail=100.0),
+        ]
+    )
+    assert (result.trades[0].exit_reason, result.trades[0].exit_price) == ("TARGET", 110.0)

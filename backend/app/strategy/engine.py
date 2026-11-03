@@ -263,7 +263,7 @@ class MtzReversalStrategy:
         )
 
         allowed = [s for s in signals if s.code in self.parameters.entry_patterns]
-        action, codes, entry = self._adr_reversal(bar) or self._decide(bar, allowed)
+        action, codes, entry = self._entry(timestamp, bar, allowed)
         shared = self._session_context
         context = _clean(
             {
@@ -278,6 +278,7 @@ class MtzReversalStrategy:
                 ),
                 "cpr_position": _position(bar.close, day.cpr.tc, day.cpr.bc),
                 "day_direction": {"side": self._day_side, "source": self._day_source},
+                **self._extra_context(),
                 "hot_zones": {"h4_breakout": h4_break, "l4_breakdown": l4_break},
                 "reversal_signals": [
                     {"code": s.code, "side": "long" if s.is_long else "short"} for s in signals
@@ -331,6 +332,15 @@ class MtzReversalStrategy:
             if not is_na(cpr.tc) and not is_na(cpr.bc):
                 zones.append(Zone(names[period], cpr.tc, cpr.bc))
         return zones
+
+    def _entry(
+        self, timestamp: datetime, bar: Bar, signals: list[ReversalSignal]
+    ) -> tuple[DecisionAction, list[str], EntrySignal | None]:
+        """The entry decision for a confirmed bar, from the chosen reversal signals."""
+        return self._adr_reversal(bar) or self._decide(bar, signals)
+
+    def _extra_context(self) -> dict[str, Any]:
+        return {}
 
     def _closes_15m(self, timestamp: datetime) -> bool:
         """Whether this bar's close is also a 15-minute candle's close."""

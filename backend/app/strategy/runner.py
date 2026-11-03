@@ -12,7 +12,8 @@ from app.data.calendar import nse
 from app.domain.candle import EXCHANGE_TZ
 from app.strategy.engine import Decision, MtzReversalStrategy, SessionInfo
 from app.strategy.levels import PeriodBar
-from app.strategy.parameters import StrategyParameters
+from app.strategy.parameters import StrategyKind, StrategyParameters
+from app.strategy.pivot_boss import PivotBossStrategy
 from app.strategy.reversal import Bar
 
 STRATEGY_SOURCE_DIR = Path(__file__).parent
@@ -56,7 +57,12 @@ def iter_evaluations(
     its session has ended; of the current session's daily candle, only the open is used before the
     final bar. A bar is flagged final when it closes at the scheduled session close.
     """
-    strategy = MtzReversalStrategy(parameters, bar)
+    chosen = parameters or StrategyParameters()
+    strategy = (
+        PivotBossStrategy(chosen, bar)
+        if chosen.strategy == StrategyKind.PIVOT_BOSS
+        else MtzReversalStrategy(chosen, bar)
+    )
     daily_rows = {
         row["trading_date"]: row for row in daily.sort("trading_date").iter_rows(named=True)
     }
