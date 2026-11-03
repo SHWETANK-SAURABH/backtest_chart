@@ -75,7 +75,9 @@ def validate_candles(
     report.rows_with_volume = frame["volume"].drop_nulls().len()
     report.duplicate_timestamps = frame.height - frame["timestamp"].n_unique()
 
-    local = frame.with_columns(pl.col("timestamp").dt.convert_time_zone(EXCHANGE_TIMEZONE).alias("local"))
+    local = frame.with_columns(
+        pl.col("timestamp").dt.convert_time_zone(EXCHANGE_TIMEZONE).alias("local")
+    )
     _check_ohlc(local, report)
     if timeframe == Timeframe.D1:
         _check_daily(local, first, last, report)

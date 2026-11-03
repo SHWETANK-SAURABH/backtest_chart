@@ -13,12 +13,15 @@ from app.api.schemas import (
     BacktestCreate,
     BacktestDetailResponse,
     BacktestJobResponse,
+    BacktestListItem,
+    BacktestSummary,
     ReproducibilityResponse,
 )
 from app.backtesting.service import input_hash
 from app.database.models import (
     BacktestJob,
     BacktestJobEvent,
+    BacktestMetrics,
     DataProvider,
     Dataset,
     Instrument,
@@ -103,13 +106,14 @@ def create_backtest(request: BacktestCreate, session: SessionDep) -> BacktestJob
         instrument_id=session.scalars(
             select(Instrument.id).where(Instrument.symbol == NIFTY50)
         ).one(),
-        timeframe=Timeframe.M5.value,
+        timeframe=request.timeframe.value,
         start_date=request.start_date,
         end_date=request.end_date,
         execution_method=request.execution.method.value,
         execution_settings=request.execution.model_dump(mode="json"),
         risk_settings=request.risk.model_dump(mode="json"),
         capital_assumptions=request.capital.model_dump(mode="json"),
+        strategy_options=request.strategy_options.model_dump(mode="json"),
         input_hash=input_hash(
             version,
             intraday,
@@ -118,6 +122,8 @@ def create_backtest(request: BacktestCreate, session: SessionDep) -> BacktestJob
             request.end_date,
             request.execution,
             request.risk,
+            request.strategy_options,
+            request.timeframe,
         ),
     )
     session.add(job)
@@ -156,6 +162,7 @@ def rerun_backtest(job_id: uuid.UUID, session: SessionDep) -> BacktestJobRespons
                 "execution_settings",
                 "risk_settings",
                 "capital_assumptions",
+                "strategy_options",
                 "input_hash",
             )
         }
@@ -198,9 +205,27 @@ def reproducibility(job_id: uuid.UUID, session: SessionDep) -> ReproducibilityRe
 @router.get("")
 def list_backtests(
     session: SessionDep, limit: Annotated[int, Query(ge=1, le=200)] = 50
-) -> list[BacktestJobResponse]:
-    rows = session.scalars(select(BacktestJob).order_by(BacktestJob.created_at.desc()).limit(limit))
-    return [BacktestJobResponse.model_validate(row) for row in rows]
+) -> list[BacktestListItem]:
+    rows = session.execute(
+        select(BacktestJob, BacktestMetrics)
+        .outerjoin(BacktestMetrics, BacktestMetrics.backtest_job_id == BacktestJob.id)
+        .order_by(BacktestJob.created_at.desc())
+        .limit(limit)
+    )
+    return [
+        BacktestListItem(
+            **BacktestJobResponse.model_validate(job).model_dump(),
+            summary=None
+            if metrics is None
+            else BacktestSummary(
+                total_trades=metrics.total_trades,
+                win_rate=metrics.win_rate,
+                net_points=metrics.net_points,
+                profit_factor=metrics.profit_factor,
+            ),
+        )
+        for job, metrics in rows
+    ]
 
 
 def _get_job(session: Session, job_id: uuid.UUID) -> BacktestJob:

@@ -202,7 +202,9 @@ def _error_code_and_message(body: Any) -> tuple[str, str]:
     if not isinstance(body, dict):
         return "", ""
     errors = body.get("errors")
-    entry = errors[0] if isinstance(errors, list) and errors and isinstance(errors[0], dict) else body
+    entry = (
+        errors[0] if isinstance(errors, list) and errors and isinstance(errors[0], dict) else body
+    )
     code = entry.get("errorCode") or entry.get("error_code") or ""
     message = entry.get("message") or entry.get("errorMessage") or ""
     return str(code), str(message)

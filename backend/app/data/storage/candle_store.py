@@ -51,7 +51,9 @@ def merge_candles(base: pl.DataFrame, new: pl.DataFrame) -> tuple[pl.DataFrame, 
     Unchanged rows keep their original ingestion time. A candle the provider has revised takes the
     new values; the earlier values remain available in the prior immutable version.
     """
-    changed = new.join(base.select(CONTENT_COLUMNS), on=CONTENT_COLUMNS, how="anti", nulls_equal=True)
+    changed = new.join(
+        base.select(CONTENT_COLUMNS), on=CONTENT_COLUMNS, how="anti", nulls_equal=True
+    )
     revised = changed.join(base.select("timestamp"), on="timestamp", how="semi").height
     kept = base.join(changed.select("timestamp"), on="timestamp", how="anti")
     return pl.concat([kept, changed]).sort("timestamp"), revised

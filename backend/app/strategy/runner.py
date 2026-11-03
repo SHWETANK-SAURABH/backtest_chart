@@ -35,14 +35,20 @@ class BarEvaluation:
 
 
 def evaluate(
-    intraday: pl.DataFrame, daily: pl.DataFrame, parameters: StrategyParameters | None = None
+    intraday: pl.DataFrame,
+    daily: pl.DataFrame,
+    parameters: StrategyParameters | None = None,
+    bar: timedelta = _BAR,
 ) -> list[Decision]:
     """One decision per intraday candle."""
-    return [item.decision for item in iter_evaluations(intraday, daily, parameters)]
+    return [item.decision for item in iter_evaluations(intraday, daily, parameters, bar)]
 
 
 def iter_evaluations(
-    intraday: pl.DataFrame, daily: pl.DataFrame, parameters: StrategyParameters | None = None
+    intraday: pl.DataFrame,
+    daily: pl.DataFrame,
+    parameters: StrategyParameters | None = None,
+    bar: timedelta = _BAR,
 ) -> Iterator[BarEvaluation]:
     """Decisions in chronological order, produced one candle at a time.
 
@@ -87,7 +93,7 @@ def iter_evaluations(
             current_date = day
 
         local_open = row["timestamp"].astimezone(EXCHANGE_TZ)
-        final_bar = session_close is not None and local_open + _BAR == session_close
+        final_bar = session_close is not None and local_open + bar == session_close
         today = daily_rows.get(day)
         decision = strategy.on_bar(
             row["timestamp"],

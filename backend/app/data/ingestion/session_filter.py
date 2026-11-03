@@ -39,7 +39,9 @@ def keep_session_bars(frame: pl.DataFrame) -> tuple[pl.DataFrame, SessionFilterR
 
     keep = []
     excluded = []
-    for day, moment in zip(frame["trading_date"].to_list(), frame["timestamp"].to_list(), strict=True):
+    for day, moment in zip(
+        frame["trading_date"].to_list(), frame["timestamp"].to_list(), strict=True
+    ):
         session = schedule.get(day)
         local = moment.astimezone(EXCHANGE_TZ)
         inside = session is None or session.open <= local <= session.close - bar

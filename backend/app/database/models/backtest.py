@@ -50,6 +50,10 @@ class BacktestJob(TimestampMixin, Base):
     execution_settings: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
     risk_settings: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
     capital_assumptions: Mapped[dict[str, Any]] = mapped_column(nullable=False, default=dict)
+    # Entry patterns and MTZ choice (StrategyOptions), applied over the version's parameters.
+    strategy_options: Mapped[dict[str, Any]] = mapped_column(
+        nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     # Hash of strategy version, dataset versions and settings, used to verify reproducibility.
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     result_hash: Mapped[str | None] = mapped_column(String(64))

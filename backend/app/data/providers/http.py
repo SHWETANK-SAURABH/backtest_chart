@@ -51,7 +51,9 @@ class RetryingTransport:
             try:
                 response = self._client.request(method, url, headers=headers, json=json)
             except httpx.TransportError as exc:
-                log.warning(f"{self._name}.transport_error", attempt=attempt, error=type(exc).__name__)
+                log.warning(
+                    f"{self._name}.transport_error", attempt=attempt, error=type(exc).__name__
+                )
                 failure = ProviderUnavailableError(f"Network failure: {type(exc).__name__}")
                 continue
             try:

@@ -14,10 +14,12 @@ class Position:
     entry_time: datetime
     entry_price: float
     stop_loss: float
-    target: float
+    target: float | None
     entry_reasons: list[str]
     entry_context: dict[str, Any]
     entry_notes: list[str] = field(default_factory=list)
+    # Exit when a candle of the opposite colour closes beyond the fast EMA.
+    ema_trail: bool = False
 
     def points(self, exit_price: float) -> float:
         if self.side == Side.LONG:
@@ -35,7 +37,7 @@ class ClosedTrade:
     entry_price: float
     exit_price: float
     stop_loss: float
-    target: float
+    target: float | None
     exit_reason: str
     gross_points: float
     cost_points: float

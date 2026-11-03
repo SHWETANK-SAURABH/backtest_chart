@@ -6,7 +6,14 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select } from "@/components/ui";
 import { useApi } from "@/hooks/use-api";
 import { get, post } from "@/services/client";
-import type { Backtest, MarketDataHealth, Strategy, StrategyDetail, StrategyVersion } from "@/types/api";
+import type { Backtest, MarketDataHealth, Pattern, Strategy, StrategyDetail, StrategyVersion } from "@/types/api";
+
+const PATTERNS: { code: Pattern; name: string }[] = [
+  { code: "OR", name: "Outside reversal" },
+  { code: "DR", name: "Doji reversal" },
+  { code: "ER", name: "Extreme reversal" },
+  { code: "WR", name: "Wick reversal" },
+];
 
 export default function NewBacktestPage() {
   const router = useRouter();
@@ -15,11 +22,19 @@ export default function NewBacktestPage() {
   const [versions, setVersions] = useState<(StrategyVersion & { strategy: string })[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [patterns, setPatterns] = useState<Pattern[]>(PATTERNS.map((p) => p.code));
 
   useEffect(() => {
     if (!strategies.data) return;
     Promise.all(strategies.data.map((s) => get<StrategyDetail>(`/strategies/${s.id}`)))
-      .then((details) => setVersions(details.flatMap((d) => d.versions.map((v) => ({ ...v, strategy: d.name })))))
+      // Newest first, so the default is the latest registered version.
+      .then((details) =>
+        setVersions(
+          details
+            .flatMap((d) => d.versions.map((v) => ({ ...v, strategy: d.name })))
+            .sort((x, y) => y.created_at.localeCompare(x.created_at)),
+        ),
+      )
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
   }, [strategies.data]);
 
@@ -37,6 +52,8 @@ export default function NewBacktestPage() {
         strategy_version_id: form.get("strategy_version_id"),
         start_date: form.get("start_date"),
         end_date: form.get("end_date"),
+        timeframe: form.get("timeframe"),
+        strategy_options: { entry_patterns: patterns, mtz: form.get("mtz") },
         execution: { method: form.get("method"), slippage_points: Number(form.get("slippage_points") || 0) },
         risk: { max_trades_per_day: optional("max_trades_per_day"), max_daily_loss_points: optional("max_daily_loss_points") },
         capital: { initial_capital: Number(form.get("initial_capital") || 1000000) },
@@ -51,7 +68,7 @@ export default function NewBacktestPage() {
   const loading = (strategies.loading && !strategies.data) || (data.loading && !data.data);
   return (
     <div className="max-w-3xl">
-      <PageHeader title="New backtest" description="NIFTY 50 spot, 5-minute candles. Results are theoretical index points." />
+      <PageHeader title="New backtest" description="NIFTY 50 spot, 5- or 15-minute candles. Results are theoretical index points." />
       {loading ? (
         <Loading />
       ) : (
@@ -69,8 +86,11 @@ export default function NewBacktestPage() {
                   ))}
                 </Select>
               </Field>
-              <Field label="Instrument and timeframe">
-                <Input value="NIFTY 50 (NSE), 5 minutes" disabled readOnly />
+              <Field label="Timeframe" hint="15-minute candles are built from the 5-minute data">
+                <Select name="timeframe" defaultValue="5m">
+                  <option value="5m">5 minutes</option>
+                  <option value="15m">15 minutes</option>
+                </Select>
               </Field>
               <Field label="Start date" hint={intraday ? `5-minute data covers ${intraday.start_date} to ${intraday.end_date}` : undefined}>
                 <Input type="date" name="start_date" required min={intraday?.start_date ?? undefined} max={intraday?.end_date ?? undefined} defaultValue={intraday?.start_date ?? undefined} />
@@ -79,6 +99,43 @@ export default function NewBacktestPage() {
                 <Input type="date" name="end_date" required min={intraday?.start_date ?? undefined} max={intraday?.end_date ?? undefined} defaultValue={intraday?.end_date ?? undefined} />
               </Field>
             </div>
+          </Card>
+
+          <Card title="Entries and exits">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <fieldset className="text-sm">
+                <legend className="mb-1 text-ink-2">Entry patterns</legend>
+                <div className="grid grid-cols-2 gap-1">
+                  {PATTERNS.map((p) => (
+                    <label key={p.code} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={patterns.includes(p.code)}
+                        onChange={(e) =>
+                          setPatterns((current) =>
+                            e.target.checked ? [...current, p.code] : current.filter((c) => c !== p.code),
+                          )
+                        }
+                      />
+                      {p.name} ({p.code})
+                    </label>
+                  ))}
+                </div>
+                {patterns.length === 0 && <p className="mt-1 text-xs text-critical">Choose at least one pattern.</p>}
+              </fieldset>
+              <Field label="Entry zones (MTZ)" hint="Entries come from these zones; the target can be any other MTZ, daily or weekly.">
+                <Select name="mtz" defaultValue="both">
+                  <option value="both">Daily and weekly MTZ</option>
+                  <option value="daily">Daily MTZ only</option>
+                  <option value="weekly">Weekly MTZ only</option>
+                </Select>
+              </Field>
+            </div>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted">
+              <li>No new entries once price touches the daily R2 or S2.</li>
+              <li>Exit by the daily CPR histogram: Sideways, no trades that day; Sideways Trading, target the next MTZ; Trending and Possible Trending, no target, exit when an opposite-colour candle closes beyond the 5 EMA.</li>
+              <li>The stop is always the signal candle&apos;s low (long) or high (short).</li>
+            </ul>
           </Card>
 
           <Card title="Execution">
@@ -109,7 +166,7 @@ export default function NewBacktestPage() {
             </div>
           </Card>
 
-          <Button type="submit" disabled={submitting || !intraday || !daily || versions.length === 0}>
+          <Button type="submit" disabled={submitting || !intraday || !daily || versions.length === 0 || patterns.length === 0}>
             {submitting ? "Starting…" : "Run backtest"}
           </Button>
         </form>

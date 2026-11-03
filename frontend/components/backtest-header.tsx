@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { Button, PointsNotice, StatusBadge } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { shortId } from "@/lib/format";
+import { shortId, strategyOptions } from "@/lib/format";
 import { post } from "@/services/client";
 import type { BacktestDetail } from "@/types/api";
 
@@ -19,6 +19,7 @@ export function BacktestHeader({ backtest, onChange }: { backtest: BacktestDetai
     { href: `/reports?backtest=${backtest.id}`, label: "Reports" },
   ];
   const running = backtest.status === "pending" || backtest.status === "running";
+  const options = strategyOptions(backtest);
 
   return (
     <header className="mb-4 space-y-3">
@@ -28,7 +29,7 @@ export function BacktestHeader({ backtest, onChange }: { backtest: BacktestDetai
             Backtest {shortId(backtest.id)} <StatusBadge status={backtest.status} />
           </h1>
           <p className="mt-1 text-sm text-ink-2">
-            {backtest.start_date} to {backtest.end_date} ·{" "}
+            {backtest.start_date} to {backtest.end_date} · {options.timeframe} · {options.patterns} · {options.mtz} ·{" "}
             {backtest.execution_method === "signal_close" ? "signal close fills (idealised)" : "next open fills"} · slippage{" "}
             {String(backtest.execution_settings.slippage_points ?? 0)} pts · <PointsNotice />
           </p>

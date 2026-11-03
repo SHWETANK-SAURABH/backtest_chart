@@ -13,6 +13,7 @@ import pytest
 
 from app.domain.candle import EXCHANGE_TZ
 from app.domain.enums import DecisionAction
+from app.strategy.parameters import MtzChoice, StrategyOptions, StrategyParameters
 from app.strategy.runner import code_hash, evaluate
 
 MONDAY = date(2025, 6, 16)
@@ -25,9 +26,16 @@ WEEK_BEFORE = [
 ]
 
 
-def daily_frame(extra: list[tuple] | None = None) -> pl.DataFrame:
-    rows = [*WEEK_BEFORE, (MONDAY, 100.5, 102, 99.5, 101.5), *(extra or [])]
+def daily_frame(extra: list[tuple] | None = None, friday_close: float = 102) -> pl.DataFrame:
+    """Friday's close sets Monday's daily CPR width: 102 gives 1.32% (Sideways Trading),
+    100.9 gives 0.60% (Sideways) and 100.3 gives 0.20% (Trending)."""
+    week = [*WEEK_BEFORE[:-1], (*WEEK_BEFORE[-1][:4], friday_close)]
+    rows = [*week, (MONDAY, 100.5, 102, 99.5, 101.5), *(extra or [])]
     return pl.DataFrame(rows, schema=["trading_date", "open", "high", "low", "close"], orient="row")
+
+
+def with_options(**options) -> StrategyParameters:
+    return StrategyOptions(**options).apply(StrategyParameters())
 
 
 def intraday_frame(
@@ -80,7 +88,13 @@ def test_reversal_at_daily_mtz_buys_toward_the_weekly_mtz() -> None:
     assert signal.stop_loss == 100.0  # the outside bar's low
     assert signal.target == pytest.approx(105.5)  # weekly MTZ near edge
     assert signal.target_zone == "weekly_mtz"
-    assert decisions[2].reason_codes == ["OR_LONG", "AT_DAILY_MTZ", "TARGET_WEEKLY_MTZ"]
+    assert decisions[2].reason_codes == [
+        "OR_LONG",
+        "AT_DAILY_MTZ",
+        "TARGET_WEEKLY_MTZ",
+        "EXIT_MTZ_TARGET",
+    ]
+    assert signal.exit_mode == "EXIT_MTZ_TARGET"
     assert "Outside reversal (long) confirmed." in decisions[2].explanation
     assert "Stop 100.00, target 105.50." in decisions[2].explanation
 
@@ -204,3 +218,69 @@ def test_a_session_cannot_start_after_its_own_daily_candle_was_added() -> None:
 def test_code_hash_is_stable_and_well_formed() -> None:
     assert code_hash() == code_hash()
     assert len(code_hash()) == 64
+
+
+def test_cpr_histogram_of_each_fixture() -> None:
+    for close, histogram in ((102, "Sideways Trading"), (100.9, "Sideways"), (100.3, "Trending")):
+        decision = evaluate(intraday_frame(LONG_AT_DAILY_MTZ), daily_frame(friday_close=close))[0]
+        assert decision.context["cpr_daily"]["histogram"] == histogram
+
+
+def test_trending_cpr_trails_with_the_ema_and_has_no_target() -> None:
+    decision = evaluate(intraday_frame(LONG_AT_DAILY_MTZ), daily_frame(friday_close=100.3))[2]
+    assert decision.action == DecisionAction.BUY
+    assert decision.signal is not None
+    assert decision.signal.target is None
+    assert decision.signal.target_zone is None
+    assert decision.signal.exit_mode == "EXIT_EMA_TRAIL"
+    assert decision.reason_codes == ["OR_LONG", "AT_DAILY_MTZ", "EXIT_EMA_TRAIL"]
+    assert "target none" in decision.explanation
+
+
+def test_sideways_cpr_means_no_trades_that_day() -> None:
+    decision = evaluate(intraday_frame(LONG_AT_DAILY_MTZ), daily_frame(friday_close=100.9))[2]
+    assert decision.action == DecisionAction.HOLD
+    assert decision.reason_codes == ["CPR_SIDEWAYS_NO_TRADE", "OR_LONG"]
+
+
+def test_no_entries_after_price_touches_r2_or_s2() -> None:
+    # Monday's daily R2 is 110.67 and S2 is 90.67 (pivot 100.67, Friday's range 10).
+    for touch in ((100.5, 111.0, 100.4, 100.5), (100.5, 100.6, 90.0, 100.5)):
+        decisions = evaluate(intraday_frame([touch, *LONG_AT_DAILY_MTZ]), daily_frame())
+        assert decisions[3].action == DecisionAction.HOLD
+        assert decisions[3].reason_codes == ["R2_S2_REACHED", "OR_LONG"]
+
+
+def test_only_chosen_patterns_can_enter() -> None:
+    decision = evaluate(
+        intraday_frame(LONG_AT_DAILY_MTZ), daily_frame(), with_options(entry_patterns=("DR", "WR"))
+    )[2]
+    assert decision.action == DecisionAction.HOLD
+    assert decision.reason_codes == ["NO_REVERSAL_SIGNAL"]
+    # The candle itself is still recorded as an outside reversal.
+    assert decision.context["reversal_signals"] == [{"code": "OR", "side": "long"}]
+
+
+def test_daily_only_enters_at_the_daily_mtz_and_targets_the_weekly() -> None:
+    decision = evaluate(
+        intraday_frame(LONG_AT_DAILY_MTZ), daily_frame(), with_options(mtz=MtzChoice.DAILY)
+    )[2]
+    assert decision.action == DecisionAction.BUY
+    assert decision.signal is not None
+    assert decision.signal.target_zone == "weekly_mtz"
+
+
+def test_weekly_only_ignores_reversals_at_the_daily_mtz() -> None:
+    decision = evaluate(
+        intraday_frame(LONG_AT_DAILY_MTZ), daily_frame(), with_options(mtz=MtzChoice.WEEKLY)
+    )[2]
+    assert decision.action == DecisionAction.HOLD
+    assert decision.reason_codes == ["REVERSAL_NOT_AT_MTZ", "OR_LONG"]
+
+
+def test_strategy_options_validate_and_normalise_patterns() -> None:
+    assert StrategyOptions(entry_patterns=("WR", "OR")).entry_patterns == ("OR", "WR")
+    with pytest.raises(ValueError, match="at least one"):
+        StrategyOptions(entry_patterns=())
+    with pytest.raises(ValueError, match="Unknown"):
+        StrategyOptions(entry_patterns=("XX",))

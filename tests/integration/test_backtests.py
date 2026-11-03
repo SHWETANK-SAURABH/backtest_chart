@@ -18,7 +18,8 @@ from app.database.models import (
     StrategyVersion,
     Trade,
 )
-from app.domain.enums import DatasetStatus, JobStatus
+from app.domain.enums import DatasetStatus, JobStatus, Timeframe
+from app.strategy.parameters import MtzChoice, StrategyOptions
 from tests.support.backtests import END, START, make_job
 
 pytestmark = pytest.mark.integration
@@ -298,3 +299,72 @@ def test_invalid_dataset_cannot_be_selected(client: TestClient, setup: dict, db:
     )
     assert response.status_code == 409
     assert "quality report" in response.json()["detail"]
+
+
+def test_fifteen_minute_backtest_runs_on_built_candles(db: Session, setup: dict) -> None:
+    job = make_job(db, setup, timeframe=Timeframe.M15)
+    BacktestService(db, setup["store"]).run(job.id)
+    assert job.status == JobStatus.COMPLETED, job.error
+    sessions = 20
+    assert count(db, StrategyDecision, job) == sessions * 25
+    for trade in db.scalars(select(Trade).where(Trade.backtest_job_id == job.id)):
+        assert trade.execution_assumptions["bar_minutes"] == 15
+        assert trade.entry_ts.minute % 15 == 0
+
+
+def test_strategy_options_change_the_inputs_and_the_trades(db: Session, setup: dict) -> None:
+    every = make_job(db, setup)
+    one = make_job(db, setup, options=StrategyOptions(entry_patterns=("OR",), mtz=MtzChoice.DAILY))
+    assert every.input_hash != one.input_hash
+    for job in (every, one):
+        BacktestService(db, setup["store"]).run(job.id)
+        assert job.status == JobStatus.COMPLETED, job.error
+    trades = db.scalars(select(Trade).where(Trade.backtest_job_id == one.id)).all()
+    for trade in trades:
+        patterns = {
+            code.split("_")[0]
+            for code in trade.decision_reason
+            if code.endswith(("_LONG", "_SHORT"))
+        }
+        assert patterns == {"OR"}
+        assert "AT_WEEKLY_MTZ" not in trade.decision_reason
+
+
+def test_create_backtest_records_options_and_lists_results(
+    client: TestClient, setup: dict, db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.api.routes import backtests
+
+    monkeypatch.setattr(backtests.run_backtest, "apply_async", lambda args, retry: None)
+    body = client.post(
+        "/api/v1/backtests",
+        json=request_body(
+            setup,
+            timeframe="15m",
+            strategy_options={"entry_patterns": ["WR", "OR"], "mtz": "weekly"},
+        ),
+    ).json()
+    assert body["timeframe"] == "15m"
+    assert body["strategy_options"] == {"entry_patterns": ["OR", "WR"], "mtz": "weekly"}
+
+    BacktestService(db, setup["store"]).run(body["id"])
+    listed = {b["id"]: b for b in client.get("/api/v1/backtests").json()}[body["id"]]
+    assert listed["summary"]["total_trades"] >= 0
+    assert set(listed["summary"]) == {"total_trades", "win_rate", "net_points", "profit_factor"}
+    rerun = client.post(f"/api/v1/backtests/{body['id']}/rerun").json()
+    assert rerun["strategy_options"] == body["strategy_options"]
+    assert rerun["input_hash"] == body["input_hash"]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"timeframe": "1d"},
+        {"timeframe": "1h"},
+        {"strategy_options": {"entry_patterns": []}},
+        {"strategy_options": {"entry_patterns": ["XX"]}},
+        {"strategy_options": {"mtz": "monthly"}},
+    ],
+)
+def test_invalid_options_are_refused(client: TestClient, setup: dict, changes: dict) -> None:
+    assert client.post("/api/v1/backtests", json=request_body(setup, **changes)).status_code == 422

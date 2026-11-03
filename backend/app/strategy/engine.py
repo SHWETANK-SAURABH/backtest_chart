@@ -7,6 +7,14 @@ Entry rules confirmed by the owner on 2026-11-02:
 - Stop at the signal candle's low (long) or high (short).
 - The trade direction panel does not gate entries.
 
+Added by the owner on 2026-11-03:
+- Each backtest chooses which patterns may enter and which MTZ (daily, weekly or both) entries
+  come from. Targets may be any other MTZ, daily or weekly.
+- Once price touches the daily R2 or S2, no new entries for the rest of the session.
+- The daily CPR histogram sets the exit: Sideways means no trades that day; Sideways Trading
+  targets the next MTZ; Trending and Possible Trending have no target and exit when a candle of
+  the opposite colour closes beyond the fast (5) EMA, applied by the backtesting engine.
+
 Detailed choices made where the rules were silent are listed in docs/strategy.md.
 
 Candles are processed one at a time and the engine holds no reference to later candles, so a
@@ -21,7 +29,7 @@ from typing import Any
 from app.domain.enums import DecisionAction
 from app.strategy.adr import DailyAdr, adr_state
 from app.strategy.hot_zones import HotZone, detect_hot_zones, hot_zone_breakouts, is_near
-from app.strategy.levels import PeriodBar
+from app.strategy.levels import HIST_POSSIBLE, HIST_SIDEWAYS, HIST_TRENDING, PeriodBar
 from app.strategy.parameters import StrategyParameters
 from app.strategy.periods import Period, PeriodAggregator, PeriodLevels
 from app.strategy.pine import Ema, is_na
@@ -58,8 +66,10 @@ class EntrySignal:
     signal_candle_high: float
     signal_candle_low: float
     stop_loss: float
-    target: float
-    target_zone: str
+    # None when the exit is the EMA trail rather than a target.
+    target: float | None
+    target_zone: str | None
+    exit_mode: str  # EXIT_MTZ_TARGET or EXIT_EMA_TRAIL
 
 
 @dataclass
@@ -111,6 +121,8 @@ class MtzReversalStrategy:
         self._session_low = math.nan
         self._hot_zones: list[HotZone] = []
         self._mtz_zones: list[Zone] = []
+        self._target_zones: list[Zone] = []
+        self._extreme_reached = False
         self._session_context: dict[str, Any] = {}
 
     def add_completed_session(self, trading_date: date, bar: PeriodBar) -> None:
@@ -148,7 +160,9 @@ class MtzReversalStrategy:
             self.parameters.hot_zone_tolerance,
             self.parameters.hot_zone_min_score,
         )
-        self._mtz_zones = self._zones()
+        self._mtz_zones = self._zones(self.parameters.mtz_periods)
+        self._target_zones = self._zones((Period.DAY, Period.WEEK))
+        self._extreme_reached = False
         self._session_context = _clean(
             {
                 "session_open": session.open,
@@ -201,11 +215,17 @@ class MtzReversalStrategy:
             )
 
         signals = self._reversals.update(bar)
+        # Known at this bar's close, so it already blocks a signal confirmed on this bar.
+        if (not is_na(day.cpr.r2) and bar.high >= day.cpr.r2) or (
+            not is_na(day.cpr.s2) and bar.low <= day.cpr.s2
+        ):
+            self._extreme_reached = True
         h4_break, l4_break = hot_zone_breakouts(
             self._hot_zones, day.camarilla.h4, day.camarilla.l4, bar.close, self._previous_close
         )
 
-        action, codes, entry = self._decide(bar, signals)
+        allowed = [s for s in signals if s.code in self.parameters.entry_patterns]
+        action, codes, entry = self._decide(bar, allowed, day.cpr.histogram)
         shared = self._session_context
         context = _clean(
             {
@@ -264,54 +284,67 @@ class MtzReversalStrategy:
         # The daily Camarilla center is the previous session's close.
         return self._levels[Period.DAY].camarilla.center
 
-    def _zones(self) -> list[Zone]:
+    def _zones(self, periods: tuple[Period, ...]) -> list[Zone]:
         names = {Period.DAY: "daily_mtz", Period.WEEK: "weekly_mtz"}
         zones = []
-        for period in self.parameters.mtz_periods:
+        for period in periods:
             cpr = self._levels[period].cpr
             if not is_na(cpr.tc) and not is_na(cpr.bc):
                 zones.append(Zone(names[period], cpr.tc, cpr.bc))
         return zones
 
     def _decide(
-        self, bar: Bar, signals: list[ReversalSignal]
+        self, bar: Bar, signals: list[ReversalSignal], histogram: str
     ) -> tuple[DecisionAction, list[str], EntrySignal | None]:
         zones = self._mtz_zones
         if not zones:
             return DecisionAction.HOLD, ["NO_MTZ_LEVELS"], None
         if not signals:
             return DecisionAction.HOLD, ["NO_REVERSAL_SIGNAL"], None
+        patterns = _pattern_codes(signals)
+        if histogram == HIST_SIDEWAYS:
+            return DecisionAction.HOLD, ["CPR_SIDEWAYS_NO_TRADE", *patterns], None
+        if self._extreme_reached:
+            return DecisionAction.HOLD, ["R2_S2_REACHED", *patterns], None
 
         # Proximity is tested on the bar before the confirming bar, as the script's labels do.
         reference = self._previous_bar
-        touched = [zone for zone in zones if reference is not None and zone.touched_by(reference)]
+        if reference is None:
+            return DecisionAction.HOLD, ["REVERSAL_NOT_AT_MTZ", *patterns], None
+        touched = [zone for zone in zones if zone.touched_by(reference)]
         if not touched:
-            return DecisionAction.HOLD, ["REVERSAL_NOT_AT_MTZ", *_pattern_codes(signals)], None
+            return DecisionAction.HOLD, ["REVERSAL_NOT_AT_MTZ", *patterns], None
+        # Any zone the signal touched, from either period, is where the trade starts.
+        targets = [zone for zone in self._target_zones if not zone.touched_by(reference)]
+        trail = histogram in (HIST_TRENDING, HIST_POSSIBLE)
 
         sides = {signal.is_long for signal in signals}
         if len(sides) > 1:
-            return DecisionAction.HOLD, ["CONFLICTING_SIGNALS", *_pattern_codes(signals)], None
+            return DecisionAction.HOLD, ["CONFLICTING_SIGNALS", *patterns], None
         is_long = sides.pop()
 
         # With several patterns on one bar, the widest signal candle sets the stop.
         if is_long:
             stop = min(signal.signal_bar.low for signal in signals)
-            candidates = [z for z in zones if z not in touched and z.bottom > bar.close]
+            candidates = [z for z in targets if z.bottom > bar.close]
             target_zone = min(candidates, key=lambda z: z.bottom, default=None)
-            target = target_zone.bottom if target_zone else math.nan
+            target = target_zone.bottom if target_zone else None
             stop_valid = stop < bar.close
         else:
             stop = max(signal.signal_bar.high for signal in signals)
-            candidates = [z for z in zones if z not in touched and z.top < bar.close]
+            candidates = [z for z in targets if z.top < bar.close]
             target_zone = max(candidates, key=lambda z: z.top, default=None)
-            target = target_zone.top if target_zone else math.nan
+            target = target_zone.top if target_zone else None
             stop_valid = stop > bar.close
 
-        codes = [*_pattern_codes(signals), *(f"AT_{z.name.upper()}" for z in touched)]
-        if target_zone is None:
+        codes = [*patterns, *(f"AT_{z.name.upper()}" for z in touched)]
+        if trail:
+            target_zone, target = None, None
+        elif target_zone is None:
             return DecisionAction.HOLD, ["NO_TARGET_ZONE", *codes], None
         if not stop_valid:
             return DecisionAction.HOLD, ["INVALID_STOP", *codes], None
+        exit_mode = "EXIT_EMA_TRAIL" if trail else "EXIT_MTZ_TARGET"
 
         entry = EntrySignal(
             side="long" if is_long else "short",
@@ -321,10 +354,12 @@ class MtzReversalStrategy:
             signal_candle_low=min(signal.signal_bar.low for signal in signals),
             stop_loss=stop,
             target=target,
-            target_zone=target_zone.name,
+            target_zone=target_zone.name if target_zone else None,
+            exit_mode=exit_mode,
         )
         action = DecisionAction.BUY if is_long else DecisionAction.SELL
-        return action, [*codes, f"TARGET_{target_zone.name.upper()}"], entry
+        exit_codes = [f"TARGET_{target_zone.name.upper()}"] if target_zone else []
+        return action, [*codes, *exit_codes, exit_mode], entry
 
 
 def _pattern_codes(signals: list[ReversalSignal]) -> list[str]:

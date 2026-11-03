@@ -105,7 +105,12 @@ def test_fills_follow_the_documented_rules(result) -> None:
             assert t.exit_price == pytest.approx(bar.open + worse)
         elif t.exit_reason == "TARGET_GAP":
             assert t.exit_price == bar.open
-        elif t.exit_reason in ("EOD_SQUARE_OFF", "SESSION_END_MISSING_DATA", "END_OF_DATA"):
+        elif t.exit_reason in (
+            "EOD_SQUARE_OFF",
+            "SESSION_END_MISSING_DATA",
+            "END_OF_DATA",
+            "EMA_TRAIL_EXIT",
+        ):
             assert t.exit_price == pytest.approx(bar.close + worse)
         # Before slippage, every fill lies within its candle's range.
         level = (
@@ -117,6 +122,11 @@ def test_fills_follow_the_documented_rules(result) -> None:
 def test_stops_and_targets_are_on_the_correct_side(result) -> None:
     _, outcome = result
     for t in outcome.trades:
+        # Trending-CPR trades have no target and exit on the EMA trail instead.
+        if t.target is None:
+            assert "EXIT_EMA_TRAIL" in t.entry_reasons
+            assert t.exit_reason != "TARGET"
+            continue
         if t.side == Side.LONG:
             assert t.stop_loss < t.target
         else:

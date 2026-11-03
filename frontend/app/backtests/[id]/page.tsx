@@ -23,6 +23,14 @@ const CATEGORY_LABELS: Record<string, string> = {
   adr_usage: "ADR used",
   cpr_width: "CPR width",
   setup: "Reversal pattern",
+  exit_reason: "Exit reason",
+};
+
+const PATTERN_NAMES: Record<string, string> = {
+  OR: "Outside reversal (OR)",
+  DR: "Doji reversal (DR)",
+  ER: "Extreme reversal (ER)",
+  WR: "Wick reversal (WR)",
 };
 
 export default function BacktestResultsPage() {
@@ -77,6 +85,28 @@ export default function BacktestResultsPage() {
               {daily.data?.length ? <PeriodBars data={daily.data} label="Net points per session" /> : <Empty>No data.</Empty>}
             </Card>
           </div>
+
+          <Card title="Entry pattern comparison">
+            {m.by_market_condition.setup ? (
+              <Table columns={["Pattern", "Trades", "Win rate", "Won / lost", "Net points", "Average"]}>
+                {Object.entries(m.by_market_condition.setup).map(([pattern, s]) => (
+                  <tr key={pattern}>
+                    <Td>{PATTERN_NAMES[pattern] ?? pattern}</Td>
+                    <Td>{s.trades}</Td>
+                    <Td>{percent(s.win_rate)}</Td>
+                    <Td>{s.wins} / {s.losses}</Td>
+                    <Td className={s.net_points >= 0 ? "text-gain" : "text-loss"}>{signedPoints(s.net_points)}</Td>
+                    <Td>{signedPoints(s.average_points)}</Td>
+                  </tr>
+                ))}
+              </Table>
+            ) : (
+              <Empty>No trades to compare.</Empty>
+            )}
+            <p className="mt-3 text-xs text-muted">
+              A trade counts under every pattern that confirmed on its signal candle. To compare patterns on their own, run one backtest per pattern and compare them on the Backtests page.
+            </p>
+          </Card>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Card title="Trade statistics">

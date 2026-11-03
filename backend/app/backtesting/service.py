@@ -24,6 +24,7 @@ from app.analytics.metrics import (
 )
 from app.backtesting.engine import BacktestEngine, BacktestResult, BarRecord
 from app.backtesting.settings import CapitalAssumptions, ExecutionSettings, RiskSettings
+from app.backtesting.timeframes import BAR_LENGTHS, resample
 from app.data.calendar import nse
 from app.data.storage.candle_store import CandleStore
 from app.database.models import (
@@ -38,10 +39,10 @@ from app.database.models import (
     StrategyVersion,
     Trade,
 )
-from app.domain.enums import DatasetStatus, JobStatus
+from app.domain.enums import DatasetStatus, JobStatus, Timeframe
 from app.portfolio.position import ClosedTrade
 from app.strategy.engine import Decision
-from app.strategy.parameters import StrategyParameters
+from app.strategy.parameters import StrategyOptions, StrategyParameters
 from app.strategy.runner import BarEvaluation, code_hash, iter_evaluations
 
 log = structlog.get_logger()
@@ -67,6 +68,8 @@ def input_hash(
     end: date,
     execution: ExecutionSettings,
     risk: RiskSettings,
+    options: StrategyOptions | None = None,
+    timeframe: Timeframe = Timeframe.M5,
 ) -> str:
     payload = {
         "strategy_version_id": str(version.id),
@@ -80,6 +83,11 @@ def input_hash(
         "risk": risk.model_dump(mode="json"),
         "warmup_sessions": WARMUP_SESSIONS,
     }
+    # Added only when set, so hashes of backtests made before these options are unchanged.
+    if options is not None:
+        payload["strategy_options"] = options.model_dump(mode="json")
+    if timeframe != Timeframe.M5:
+        payload["timeframe"] = timeframe.value
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
@@ -149,7 +157,10 @@ class BacktestService:
                 "The strategy code has changed since this version was registered, so its results "
                 "could not be reproduced. Register a new strategy version."
             )
-        parameters = StrategyParameters(**version.parameters)
+        parameters = StrategyOptions(**job.strategy_options).apply(
+            StrategyParameters(**version.parameters)
+        )
+        timeframe = Timeframe(job.timeframe)
 
         datasets = {}
         for name, dataset_id in (
@@ -162,17 +173,23 @@ class BacktestService:
             self._store.verify(dataset.manifest)
             datasets[name] = dataset
 
-        intraday = self._store.query(
-            datasets["intraday"].manifest, start=warmup_start(job.start_date), end=job.end_date
+        intraday = resample(
+            self._store.query(
+                datasets["intraday"].manifest, start=warmup_start(job.start_date), end=job.end_date
+            ),
+            timeframe,
         )
         daily = self._store.query(datasets["daily"].manifest, end=job.end_date)
         if intraday.filter(intraday["trading_date"] >= job.start_date).is_empty():
             raise BacktestInputError("The intraday dataset has no candles in the requested range")
 
+        bar = BAR_LENGTHS[timeframe]
         engine = BacktestEngine(
-            ExecutionSettings(**job.execution_settings), RiskSettings(**job.risk_settings)
+            ExecutionSettings(**job.execution_settings), RiskSettings(**job.risk_settings), bar=bar
         )
-        evaluations = self._watch_for_cancel(job, iter_evaluations(intraday, daily, parameters))
+        evaluations = self._watch_for_cancel(
+            job, iter_evaluations(intraday, daily, parameters, bar)
+        )
         return engine.run(evaluations, trade_from=job.start_date)
 
     def _watch_for_cancel(
@@ -215,7 +232,7 @@ class BacktestService:
         sessions = sorted({record.decision.trading_date for record in result.records})
         daily = daily_performance(trades, sessions)
         by_condition = regimes.performance_by_condition(
-            ((regimes.labels(t.entry_context, t.entry_time), t.net_points) for t in trades),
+            ((_labels(t), t.net_points) for t in trades),
             ((_patterns(t.entry_reasons), t.net_points) for t in trades),
         )
         self._session.add(
@@ -302,6 +319,14 @@ def _decision_row(job_id: uuid.UUID, record: BarRecord) -> dict[str, Any]:
         "trade_opened": record.trade_opened,
         "position_closed": record.position_closed,
         "position_state": record.position_state,
+    }
+
+
+def _labels(trade: ClosedTrade) -> dict[str, str | None]:
+    """Decision-time condition labels, plus how the trade ended, for per-condition results."""
+    return {
+        **regimes.labels(trade.entry_context, trade.entry_time),
+        "exit_reason": trade.exit_reason,
     }
 
 

@@ -11,6 +11,7 @@ from app.backtesting.settings import CapitalAssumptions, ExecutionSettings, Risk
 from app.datasets.dataset_builder import DatasetParameters
 from app.domain.candle import EXCHANGE_TIMEZONE
 from app.domain.enums import ExportFormat, ReportCategory, Timeframe
+from app.strategy.parameters import StrategyOptions
 
 
 class ComponentHealth(BaseModel):
@@ -54,6 +55,9 @@ class IngestRequest(BaseModel):
 
     @model_validator(mode="after")
     def check_dates(self) -> Self:
+        if self.timeframe == Timeframe.M15:
+            # 15-minute candles are built from stored 5-minute data when a backtest runs.
+            raise ValueError("Download 5m or 1d data; 15m candles are built from 5m data")
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date")
         today = datetime.now(ZoneInfo(EXCHANGE_TIMEZONE)).date()
@@ -171,6 +175,9 @@ class BacktestCreate(BaseModel):
     provider: str | None = None
     intraday_dataset_id: uuid.UUID | None = None
     daily_dataset_id: uuid.UUID | None = None
+    # 15-minute candles are built from the 5-minute dataset.
+    timeframe: Timeframe = Timeframe.M5
+    strategy_options: StrategyOptions = Field(default_factory=StrategyOptions)
     execution: ExecutionSettings = Field(default_factory=ExecutionSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)
     capital: CapitalAssumptions = Field(default_factory=CapitalAssumptions)
@@ -179,6 +186,8 @@ class BacktestCreate(BaseModel):
     def check_dates(self) -> Self:
         if self.start_date > self.end_date:
             raise ValueError("start_date must not be after end_date")
+        if self.timeframe not in (Timeframe.M5, Timeframe.M15):
+            raise ValueError("timeframe must be 5m or 15m")
         return self
 
 
@@ -196,6 +205,7 @@ class BacktestJobResponse(BaseModel):
     execution_settings: dict[str, Any]
     risk_settings: dict[str, Any]
     capital_assumptions: dict[str, Any]
+    strategy_options: dict[str, Any]
     input_hash: str
     result_hash: str | None
     status: str
@@ -203,6 +213,18 @@ class BacktestJobResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+
+
+class BacktestSummary(BaseModel):
+    total_trades: int
+    win_rate: float | None
+    net_points: float
+    profit_factor: float | None
+
+
+class BacktestListItem(BacktestJobResponse):
+    # Completed backtests only, so runs with different options can be compared.
+    summary: BacktestSummary | None = None
 
 
 class BacktestDetailResponse(BacktestJobResponse):

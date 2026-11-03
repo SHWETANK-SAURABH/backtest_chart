@@ -37,17 +37,39 @@ def bar(
     c: float,
     action: DecisionAction = DecisionAction.HOLD,
     stop: float = 98.0,
-    target: float = 104.0,
+    target: float | None = 104.0,
     day: date = DAY,
     final: bool = False,
+    ema: float | None = None,
 ) -> Step:
     signal = None
     if action != DecisionAction.HOLD:
         side = "long" if action == DecisionAction.BUY else "short"
-        signal = EntrySignal(side, ["OR"], ["daily_mtz"], h, low, stop, target, "weekly_mtz")
+        trail = target is None
+        signal = EntrySignal(
+            side,
+            ["OR"],
+            ["daily_mtz"],
+            h,
+            low,
+            stop,
+            target,
+            None if trail else "weekly_mtz",
+            "EXIT_EMA_TRAIL" if trail else "EXIT_MTZ_TARGET",
+        )
     codes = ["TEST_SIGNAL"] if signal else ["NO_REVERSAL_SIGNAL"]
     decision = Decision(
-        time(index, day), day, o, h, low, c, action, codes, "test", signal, {"i": index}
+        time(index, day),
+        day,
+        o,
+        h,
+        low,
+        c,
+        action,
+        codes,
+        "test",
+        signal,
+        {"i": index, "ema_fast": ema},
     )
     return Step(decision, final)
 
@@ -56,8 +78,9 @@ BUY = DecisionAction.BUY
 SELL = DecisionAction.SELL
 
 
-def run(steps: list[Step], execution=CLOSE_FILL, risk=None, trade_from=None):
-    return BacktestEngine(execution, risk).run(steps, trade_from=trade_from)
+def run(steps: list[Step], execution=CLOSE_FILL, risk=None, trade_from=None, minutes=5):
+    engine = BacktestEngine(execution, risk, bar=timedelta(minutes=minutes))
+    return engine.run(steps, trade_from=trade_from)
 
 
 def test_long_target_hit_at_target_price() -> None:
@@ -269,3 +292,72 @@ def test_assumptions_label_signal_close_as_idealised_and_units_as_points() -> No
     assert assumptions["signal_close_is_idealised"] is True
     assert "not rupees" in assumptions["units"]
     assert BacktestEngine(OPEN_FILL).assumptions()["signal_close_is_idealised"] is False
+
+
+def test_trailing_long_exits_on_a_red_candle_closing_below_the_ema() -> None:
+    result = run(
+        [
+            bar(0, 99, 100.5, 98.5, 100, BUY, target=None, ema=99.5),
+            bar(1, 100, 103, 99.8, 102.5, ema=100.5),  # green, above the EMA: hold
+            bar(2, 102.5, 104, 101.5, 101.8, ema=102.0),  # red, closes below the EMA: exit
+            bar(3, 101.8, 102, 100, 100.5, ema=101.5),
+        ]
+    )
+    [trade] = result.trades
+    assert trade.exit_reason == "EMA_TRAIL_EXIT"
+    assert trade.exit_price == 101.8  # the red candle's close
+    assert trade.exit_time == time(3)
+    assert trade.target is None
+
+
+def test_trailing_long_ignores_a_red_candle_closing_above_the_ema() -> None:
+    result = run(
+        [
+            bar(0, 99, 100.5, 98.5, 100, BUY, target=None, ema=99.5),
+            bar(1, 101, 101.5, 100.2, 100.6, ema=100.3),  # red, but above the EMA
+            bar(2, 100.6, 101, 100.2, 100.8, ema=100.9),  # below the EMA, but green
+        ]
+    )
+    [trade] = result.trades
+    assert trade.exit_reason == "END_OF_DATA"
+
+
+def test_trailing_short_exits_on_a_green_candle_closing_above_the_ema() -> None:
+    result = run(
+        [
+            bar(0, 101, 101.5, 99.5, 100, SELL, stop=102, target=None, ema=100.5),
+            bar(1, 100, 100.2, 98, 98.5, ema=99.5),
+            bar(2, 98.5, 99.6, 98.2, 99.4, ema=99.2),  # green, close above the EMA
+        ]
+    )
+    [trade] = result.trades
+    assert (trade.exit_reason, trade.exit_price) == ("EMA_TRAIL_EXIT", 99.4)
+
+
+def test_trailing_trade_still_stops_out() -> None:
+    result = run(
+        [
+            bar(0, 99, 100.5, 98.5, 100, BUY, target=None, ema=99.5),
+            bar(1, 100, 100.2, 97, 97.5, ema=99.0),  # red below EMA, but the stop comes first
+        ]
+    )
+    [trade] = result.trades
+    assert (trade.exit_reason, trade.exit_price) == ("STOP_LOSS", 98)
+
+
+def test_targets_are_never_hit_without_a_target() -> None:
+    result = run(
+        [
+            bar(0, 99, 100.5, 98.5, 100, BUY, target=None, ema=99.5),
+            bar(1, 100, 500, 99.5, 499, ema=200),
+        ]
+    )
+    assert result.trades[0].exit_reason == "END_OF_DATA"
+
+
+def test_fifteen_minute_bars_time_exits_by_the_bar_length() -> None:
+    result = run([bar(0, 99, 100.5, 98.5, 100, BUY), bar(1, 100, 105, 99.5, 104.5)], minutes=15)
+    [trade] = result.trades
+    assert trade.entry_time == time(0) + timedelta(minutes=15)
+    assert trade.exit_time == time(1) + timedelta(minutes=15)
+    assert result.assumptions["bar_minutes"] == 15

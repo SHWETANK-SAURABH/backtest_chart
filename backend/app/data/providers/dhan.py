@@ -34,7 +34,6 @@ from app.data.providers.http import RetryingTransport, index_volume, is_number, 
 from app.domain.candle import NIFTY50, Candle
 from app.domain.enums import Timeframe
 
-
 API_BASE_URL = "https://api.dhan.co/v2"
 SECURITY_MASTER_URL = "https://images.dhan.co/api-data/api-scrip-master.csv"
 

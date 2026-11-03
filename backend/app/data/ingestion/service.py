@@ -79,9 +79,7 @@ class IngestionService:
         instrument = self._provider.resolve_instrument(instrument_row.symbol)
         staging = StagingStore(self._store.root, self._provider.code, str(job.id))
 
-        chunks = plan_chunks(
-            job.start_date, job.end_date, self._provider.max_chunk_days(timeframe)
-        )
+        chunks = plan_chunks(job.start_date, job.end_date, self._provider.max_chunk_days(timeframe))
         completed = set(job.progress.get("completed_chunks", []))
         job.progress = {
             "completed_chunks": sorted(completed),

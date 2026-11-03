@@ -13,6 +13,9 @@ Assumptions, recorded with every trade:
   close, the earliest moment it is certain to have happened.
 - If one candle touches both, the stop is assumed to have come first.
 - A candle opening beyond the stop exits at the open; one opening beyond the target fills there too.
+- A trade without a target (Trending CPR) exits at the close of the first candle of the opposite
+  colour that closes beyond the fast EMA: red and below it for a long, green and above it for a
+  short. The stop still applies, and is checked first.
 - There is one position at a time. Signals while a position is open, or in the opposite direction,
   are ignored.
 - No position is held overnight.
@@ -33,6 +36,7 @@ from app.portfolio.position import ClosedTrade, DailyRiskTracker, Position
 from app.strategy.engine import Decision
 
 BAR = timedelta(minutes=BAR_MINUTES)
+EMA_TRAIL = "EXIT_EMA_TRAIL"
 
 
 class Evaluation(Protocol):
@@ -59,9 +63,10 @@ class PendingEntry:
     side: Side
     trading_date: date
     stop_loss: float
-    target: float
+    target: float | None
     reasons: list[str]
     context: dict[str, Any]
+    ema_trail: bool = False
 
 
 @dataclass
@@ -94,18 +99,22 @@ class BacktestEngine:
         execution: ExecutionSettings | None = None,
         risk: RiskSettings | None = None,
         cost_model: CostModel | None = None,
+        bar: timedelta = BAR,
     ) -> None:
         self.execution = execution or ExecutionSettings()
         self.risk = risk or RiskSettings()
         self.cost_model = cost_model or SpotIndexNoCosts()
+        self.bar = bar
 
     def assumptions(self) -> dict[str, Any]:
         return {
+            "bar_minutes": int(self.bar.total_seconds() // 60),
             "execution_method": self.execution.method.value,
             "signal_close_is_idealised": self.execution.method == ExecutionMethod.SIGNAL_CLOSE,
             "slippage_points": self.execution.slippage_points,
             "same_candle_policy": self.execution.same_candle_policy.value,
             "intrabar_exit_time": "close of the candle that touched the level",
+            "ema_trail_exit": "close of the opposite-colour candle that closed beyond the 5 EMA",
             "positions": "one at a time, intraday only",
             "cost_model": self.cost_model.code,
             "units": "theoretical NIFTY 50 index points, not rupees",
@@ -126,6 +135,7 @@ class _Run:
     def __init__(self, engine: BacktestEngine, trade_from: date | None) -> None:
         self.settings = engine.execution
         self.cost_model = engine.cost_model
+        self.bar = engine.bar
         self.risk = DailyRiskTracker(
             engine.risk.max_trades_per_day, engine.risk.max_daily_loss_points
         )
@@ -184,7 +194,10 @@ class _Run:
         if (long and bar.open <= pending.stop_loss) or (not long and bar.open >= pending.stop_loss):
             record.execution_notes.append("ENTRY_SKIPPED_OPEN_BEYOND_STOP")
             return
-        if (long and bar.open >= pending.target) or (not long and bar.open <= pending.target):
+        target = pending.target
+        if target is not None and (
+            (long and bar.open >= target) or (not long and bar.open <= target)
+        ):
             record.execution_notes.append("ENTRY_SKIPPED_OPEN_BEYOND_TARGET")
             return
         price = bar.open + self.slippage if long else bar.open - self.slippage
@@ -202,6 +215,7 @@ class _Run:
             target=signal.target,
             entry_reasons=signal.reasons,
             entry_context=signal.context,
+            ema_trail=signal.ema_trail,
         )
         self.risk.record_entry(record.decision.trading_date)
         record.trade_opened = True
@@ -215,19 +229,24 @@ class _Run:
         if (long and bar.open <= stop) or (not long and bar.open >= stop):
             self._close(record, bar.open, "STOP_LOSS_GAP", market=True, time=bar.timestamp)
             return
-        if (long and bar.open >= target) or (not long and bar.open <= target):
+        if target is not None and (
+            (long and bar.open >= target) or (not long and bar.open <= target)
+        ):
             self._close(record, bar.open, "TARGET_GAP", market=False, time=bar.timestamp)
             return
 
         stop_hit = bar.low <= stop if long else bar.high >= stop
-        target_hit = bar.high >= target if long else bar.low <= target
+        target_hit = target is not None and (bar.high >= target if long else bar.low <= target)
         if stop_hit and target_hit:
             record.execution_notes.append("STOP_AND_TARGET_SAME_CANDLE_STOP_ASSUMED")
             self._close(record, stop, "STOP_LOSS", market=True, ambiguous=True)
         elif stop_hit:
             self._close(record, stop, "STOP_LOSS", market=True)
         elif target_hit:
+            assert target is not None
             self._close(record, target, "TARGET", market=False)
+        elif position.ema_trail and _closed_beyond_ema(bar, long):
+            self._close(record, bar.close, "EMA_TRAIL_EXIT", market=True)
 
     def _act_on_decision(self, record: BarRecord, final_bar: bool) -> None:
         decision = record.decision
@@ -252,6 +271,7 @@ class _Run:
             decision.signal.target,
             decision.reason_codes,
             decision.context,
+            ema_trail=decision.signal.exit_mode == EMA_TRAIL,
         )
         if self.settings.method == ExecutionMethod.NEXT_OPEN:
             self.pending = entry
@@ -260,7 +280,7 @@ class _Run:
         price = (
             decision.close + self.slippage if side == Side.LONG else decision.close - self.slippage
         )
-        self._open(record, side, decision.timestamp + BAR, price, entry)
+        self._open(record, side, decision.timestamp + self.bar, price, entry)
 
     def _close(
         self,
@@ -279,7 +299,7 @@ class _Run:
             price = level - self.slippage if long else level + self.slippage
         gross = position.points(price)
         cost = self.cost_model.round_trip_cost_points(position.entry_price, price)
-        exit_time = time or record.decision.timestamp + BAR
+        exit_time = time or record.decision.timestamp + self.bar
         notes = ["SAME_CANDLE_AMBIGUITY"] if ambiguous else []
         trade = ClosedTrade(
             number=len(self.trades) + 1,
@@ -306,3 +326,13 @@ class _Run:
         self.equity.append((exit_time, self.cumulative))
         self.position = None
         record.position_closed = True
+
+
+def _closed_beyond_ema(bar: Decision, long: bool) -> bool:
+    """A candle of the opposite colour closing beyond the fast EMA (known at the candle's close)."""
+    ema = bar.context.get("ema_fast")
+    if ema is None:
+        return False
+    if long:
+        return bar.close < bar.open and bar.close < ema
+    return bar.close > bar.open and bar.close > ema

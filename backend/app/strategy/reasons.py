@@ -22,6 +22,13 @@ MESSAGES = {
     "CONFLICTING_SIGNALS": "Long and short reversal candles confirmed together, so no trade.",
     "NO_TARGET_ZONE": "Reversal at an MTZ, but no other MTZ lies in the trade direction to target.",
     "INVALID_STOP": "Reversal at an MTZ, but the signal candle's stop is not beyond the close.",
+    "CPR_SIDEWAYS_NO_TRADE": "The daily CPR histogram is Sideways, so no trades today.",
+    "R2_S2_REACHED": "Price has touched the daily R2 or S2, so no new entries today.",
+    "EXIT_MTZ_TARGET": "Sideways Trading CPR: exit at the target MTZ.",
+    "EXIT_EMA_TRAIL": (
+        "Trending CPR: no target; exit when a candle of the opposite colour closes beyond the "
+        "5 EMA."
+    ),
 }
 
 
@@ -41,5 +48,6 @@ def _describe(code: str) -> str | None:
 def explain(codes: list[str], entry: "EntrySignal | None") -> str:
     parts = [text for text in (_describe(code) for code in codes) if text]
     if entry is not None:
-        parts.append(f"Stop {entry.stop_loss:.2f}, target {entry.target:.2f}.")
+        target = "none" if entry.target is None else f"{entry.target:.2f}"
+        parts.append(f"Stop {entry.stop_loss:.2f}, target {target}.")
     return " ".join(parts)

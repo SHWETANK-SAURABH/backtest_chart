@@ -1,3 +1,5 @@
+import type { Backtest } from "@/types/api";
+
 const IST = "Asia/Kolkata";
 
 export function points(value: number | null | undefined, digits = 2): string {
@@ -51,4 +53,17 @@ export function bytes(size: number | null | undefined): string {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const MTZ_LABELS = { daily: "daily MTZ", weekly: "weekly MTZ", both: "daily + weekly MTZ" } as const;
+
+/** Timeframe, entry patterns and MTZ choice, for example "15 min · OR, WR · daily MTZ". */
+export function strategyOptions(backtest: Backtest): { timeframe: string; patterns: string; mtz: string } {
+  const options = backtest.strategy_options;
+  const patterns = "entry_patterns" in options ? options.entry_patterns : null;
+  return {
+    timeframe: backtest.timeframe === "15m" ? "15 min" : "5 min",
+    patterns: !patterns || patterns.length === 4 ? "All patterns" : patterns.join(", "),
+    mtz: MTZ_LABELS["mtz" in options ? options.mtz : "both"],
+  };
 }

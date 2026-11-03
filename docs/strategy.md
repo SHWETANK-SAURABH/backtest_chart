@@ -6,7 +6,8 @@ itself is kept out of version control. Line numbers below refer to it.
 ## Source of each rule
 
 The script is an `indicator()`, not a `strategy()`. It calculates levels and draws signals, but
-places no trades. The trading rules come from the owner, confirmed on 2026-11-02.
+places no trades. The trading rules come from the owner, confirmed on 2026-11-02 and extended on
+2026-11-03 (implementation 2.0.0).
 
 | Rule | Source |
 | --- | --- |
@@ -17,11 +18,33 @@ places no trades. The trading rules come from the owner, confirmed on 2026-11-02
 | Target the next MTZ in the trade direction | Owner |
 | Stop at the signal candle's low (long) or high (short) | Owner |
 | Trade direction panel does not gate entries | Owner |
+| Each backtest chooses the entry patterns and the entry MTZ (daily, weekly or both) | Owner, 2026-11-03 |
+| Targets can be any other MTZ, daily or weekly (daily-only entries target the weekly MTZ) | Owner, 2026-11-03 |
+| No new entries once price touches the daily R2 or S2 | Owner, 2026-11-03 |
+| Daily CPR histogram Sideways (0.50 to 0.75% wide): no trades that day | Owner, 2026-11-03 |
+| Sideways Trading (0.75% and wider): exit at the target MTZ | Owner, 2026-11-03 |
+| Trending and Possible Trending (below 0.50%): no target; exit when a candle of the opposite colour closes beyond the 5 EMA | Owner, 2026-11-03 |
+| 5- or 15-minute candles | Owner, 2026-11-03 |
+
+## Backtest options
+
+| Option | Choices | Default |
+| --- | --- | --- |
+| Timeframe | 5 or 15 minutes; 15-minute candles are built from the 5-minute dataset, aligned to 09:15 | 5 minutes |
+| Entry patterns | Any of OR, DR, ER, WR | All four |
+| Entry MTZ | Daily, weekly or both | Both |
+
+Options are stored with each backtest and included in its input hash. The results page compares
+patterns, and the Backtests page compares runs.
+
+Not built yet, by the owner's choice: a 1:2 quick exit, a risk-reward setting, exits at the next
+pivot, scalping, and switches to turn the R2/S2 rule or the CPR exits off.
 
 ## Decision for each candle
 
-1. **BUY:** a long reversal candle confirms, the candle before the confirming candle touched an MTZ,
-   and another MTZ lies above the close.
+1. **BUY:** a long reversal candle of a chosen pattern confirms, the daily CPR is not Sideways,
+   price has not touched the daily R2 or S2 today, and the candle before the confirming candle
+   touched a chosen MTZ. On a Sideways Trading day another MTZ must also lie above the close.
 2. **SELL:** the same, mirrored.
 3. **HOLD:** everything else, with a reason code.
 
@@ -30,6 +53,10 @@ places no trades. The trading rules come from the owner, confirmed on 2026-11-02
 | `OR_LONG`, `DR_SHORT`, ... | Which reversal candles confirmed |
 | `AT_DAILY_MTZ`, `AT_WEEKLY_MTZ` | Which zone the signal touched |
 | `TARGET_DAILY_MTZ`, `TARGET_WEEKLY_MTZ` | Which zone is the target |
+| `EXIT_MTZ_TARGET` | Sideways Trading CPR: exit at the target |
+| `EXIT_EMA_TRAIL` | Trending CPR: no target; exit on the 5 EMA trail |
+| `CPR_SIDEWAYS_NO_TRADE` | A signal on a Sideways CPR day |
+| `R2_S2_REACHED` | A signal after price touched the daily R2 or S2 |
 | `NO_REVERSAL_SIGNAL` | No reversal candle on this bar |
 | `REVERSAL_NOT_AT_MTZ` | A reversal candle confirmed away from both zones |
 | `NO_TARGET_ZONE` | No other MTZ lies in the trade direction |
@@ -50,10 +77,17 @@ These are implementation choices, not owner instructions. Each is easy to change
 | Several patterns on one bar? | Combined; the widest candle sets the stop | Conservative stop |
 | Where exactly is the target? | Near edge of the next zone: BC above for longs, TC below for shorts | The trade reaches the zone at its near edge |
 | Can the touched zone be the target? | No | The rule is "one MTZ to another" |
-| No zone in the trade direction | No trade | A trade must have a target |
+| No zone in the trade direction | No trade on Sideways Trading days; Trending days need no target | A target trade must have a target |
+| Unchosen patterns | Ignored entirely, still recorded in the candle's context | A disabled pattern cannot block or join a signal |
+| Does the candle that touches R2 or S2 block its own signal? | Yes | The touch is known at that candle's close, when the decision is made |
+| CPR width not available (no history) | Treated as Sideways Trading, as the script does | No MTZ exists then, so no trade is possible anyway |
+| EMA trail exit price | The opposite-colour candle's close | The exit is only known at that close |
 
-Execution (fill price, slippage, same-candle stop and target, end-of-day exit) belongs to the
-backtesting engine in Phase 4.
+Execution (fill price, slippage, same-candle stop and target, the EMA trail exit, end-of-day exit)
+belongs to the backtesting engine.
+
+Version 1.0.0, used by the first real backtest, had none of the 2026-11-03 rules. Its results stay
+saved, but it can no longer be rerun because the strategy code has changed.
 
 ## Differences from the script on TradingView
 

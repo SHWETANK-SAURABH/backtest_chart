@@ -114,6 +114,7 @@ export interface Backtest {
   execution_settings: Json;
   risk_settings: Json;
   capital_assumptions: Json;
+  strategy_options: StrategyOptions | Record<string, never>;
   input_hash: string;
   result_hash: string | null;
   status: JobStatus;
@@ -121,6 +122,19 @@ export interface Backtest {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+}
+
+export type Pattern = "OR" | "DR" | "ER" | "WR";
+export type MtzChoice = "daily" | "weekly" | "both";
+
+/** Empty for backtests made before options existed: all patterns, both MTZs. */
+export interface StrategyOptions {
+  entry_patterns: Pattern[];
+  mtz: MtzChoice;
+}
+
+export interface BacktestListItem extends Backtest {
+  summary: { total_trades: number; win_rate: number | null; net_points: number; profit_factor: number | null } | null;
 }
 
 export interface BacktestDetail extends Backtest {

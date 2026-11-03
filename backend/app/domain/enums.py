@@ -19,6 +19,7 @@ class DatasetStatus(StrEnum):
 
 class Timeframe(StrEnum):
     M5 = "5m"
+    M15 = "15m"
     D1 = "1d"
 
 
