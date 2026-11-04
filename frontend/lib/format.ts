@@ -60,8 +60,11 @@ export const BOOK_SETUP_NAMES: Record<BookSetup, string> = {
   MAGNET: "Magnet (gap fill)",
   CPR_PULLBACK: "CPR pull-back",
   CPR_FADE: "CPR fade",
+  TREND_CHANGE: "Trend change",
+  PERSON_PLAN: "Person trend plan",
   FLOOR_PIVOT: "Floor pivot",
   CAM_REVERSAL: "H3/L3 reversal",
+  CAM_PATTERN: "Camarilla pattern",
   CAM_BREAKOUT: "H4/L4 breakout",
 };
 
@@ -81,18 +84,25 @@ export function strategyOptions(backtest: Backtest): {
   const thresholds = "cpr_thresholds" in options && options.cpr_thresholds ? options.cpr_thresholds : [0.25, 0.5, 0.75];
   const book = "strategy" in options && options.strategy === "pivot_boss";
   const rules = book
-    ? ["weekly_filter" in options && options.weekly_filter ? "weekly filter" : "no weekly filter"]
+    ? [
+        "trend_analysis" in options && options.trend_analysis
+          ? "full trend analysis"
+          : "weekly_filter" in options && options.weekly_filter
+            ? "weekly filter"
+            : "no weekly filter",
+      ]
     : [
         "day_direction" in options && options.day_direction ? "day direction" : null,
         "adr_trade" in options && options.adr_trade ? "ADR trade" : null,
       ].filter(Boolean);
+  if (book && "clear_trend" in options && options.clear_trend) rules.push("clear trend only");
   const setups = "book_setups" in options && options.book_setups ? options.book_setups : [];
   return {
     strategy: book ? "Pivot Boss (book)" : "MTZ reversal",
     timeframe: backtest.timeframe === "15m" ? "15 min" : "5 min",
     patterns: !patterns || patterns.length === 4 ? "All patterns" : patterns.join(", "),
     mtz: book
-      ? setups.length === 7
+      ? setups.length === Object.keys(BOOK_SETUP_NAMES).length
         ? "all book setups"
         : setups.map((s) => BOOK_SETUP_NAMES[s]).join(", ")
       : MTZ_LABELS["mtz" in options ? options.mtz : "both"],

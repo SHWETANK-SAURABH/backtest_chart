@@ -17,8 +17,11 @@ BOOK_SETUP_NAMES = {
     "MAGNET": "Magnet (gap fill)",
     "CPR_PULLBACK": "CPR pull-back",
     "CPR_FADE": "CPR fade after a rejected open",
+    "TREND_CHANGE": "Trend change after a strong day",
+    "PERSON_PLAN": "John Person's trend plan",
     "FLOOR_PIVOT": "Floor pivot, trend filtered",
     "CAM_REVERSAL": "Camarilla H3/L3 reversal",
+    "CAM_PATTERN": "Camarilla reversal pattern",
     "CAM_BREAKOUT": "Camarilla H4/L4 breakout",
 }
 
@@ -53,6 +56,12 @@ MESSAGES = {
     "NO_ROOM_TO_TARGET": "A setup fired, but price is already at or beyond its target.",
     "EXIT_FIXED_TARGET": "Exit at the fixed pivot target.",
     "EXIT_ATR_TRAIL": "Exit at the target or on a 1.5 ATR trailing stop.",
+    "AGAINST_DAY_TREND": "A setup fired against the day's trend from the two-day relationship.",
+    "AGAINST_PIVOT_TREND": "A setup fired against the floor-pivot (S1/R1) trend.",
+    "AGAINST_WEEKLY_TREND": "A setup fired against the weekly trend.",
+    "TREND_NOT_CLEAR": (
+        "A trend setup fired, but the S1/R1, day and weekly trends do not all agree."
+    ),
     "EXIT_EMA_TRAIL": (
         "Trending CPR: no target; exit when a candle of the opposite colour closes beyond the "
         "5 EMA."

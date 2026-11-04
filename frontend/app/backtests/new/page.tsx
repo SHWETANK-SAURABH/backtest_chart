@@ -28,10 +28,13 @@ const PATTERNS: { code: Pattern; name: string }[] = [
 const BOOK_SETUPS: { code: BookSetup; rule: string }[] = [
   { code: "BREAKAWAY", rule: "Narrow CPR; open gaps beyond the prior high/low and R1/S1, not past R2/S2; first candle tests the pivot and holds. Stop: day's extreme. Target R3/S3 with a 1.5 ATR trail." },
   { code: "MAGNET", rule: "The script's magnet gap; a reversal candle toward the CPR in the first hour. Stop: day's extreme. Target: the CPR." },
+  { code: "TREND_CHANGE", rule: "After a strong day (close at a 5-day high, range at least the ADR): a wick reversal at the CPR by 11:15. Stop: the wick candle. Target R1 (S1 after a strong down day)." },
   { code: "CPR_PULLBACK", rule: "Bias confirmed by the open and a Higher/Lower Value relationship; a reversal candle at the CPR before 11:15. Stop: far side of the CPR. Target R1/S1." },
   { code: "CPR_FADE", rule: "The open rejects the bias: a reversal candle at the CPR the other way. Stop: that candle. Target S1/R1." },
+  { code: "PERSON_PLAN", rule: "John Person's filter: S1/R1 uptrend, a reversal pattern at S1 or the CPR, target R1; downtrend, at R1 or the CPR, target S1. Stop beyond the level." },
   { code: "FLOOR_PIVOT", rule: "Prior two closes on the same side of their CPRs: a reversal candle at the CPR or S1 (R1 in a downtrend). Stop beyond the level. Target R1/S1." },
   { code: "CAM_REVERSAL", rule: "Wick through L3/H3 closing back inside, then a confirming candle. Stop L4/H4. Target H3/L3." },
+  { code: "CAM_PATTERN", rule: "One of the 4 reversal patterns at a Camarilla level. Wide CPR: L3 long / H3 short, stop L4/H4, target the opposite level. Narrow CPR: L3 or L4 long / H3 or H4 short, stop one level out, 5 EMA trailing exit." },
   { code: "CAM_BREAKOUT", rule: "After a failed test of H4/L4, the first close beyond it and beyond the test's high/low. Stop H3/L3. Target H5/L5." },
 ];
 
@@ -80,6 +83,8 @@ export default function NewBacktestPage() {
           strategy: kind,
           book_setups: setups,
           weekly_filter: form.get("weekly_filter") === "on",
+          trend_analysis: form.get("trend_analysis") === "on",
+          clear_trend: form.get("clear_trend") === "on",
           entry_patterns: patterns,
           mtz: form.get("mtz") ?? "both",
           cpr_thresholds: ["cpr_trending", "cpr_possible", "cpr_sideways"].map((name) => Number(form.get(name))),
@@ -163,15 +168,35 @@ export default function NewBacktestPage() {
                 {patterns.length === 0 && <p className="mt-1 text-xs text-critical">Choose at least one pattern.</p>}
               </fieldset>
               {book ? (
-                <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name="weekly_filter" defaultChecked className="mt-1" />
-                  <span>
-                    Weekly trend filter
-                    <span className="block text-xs text-muted">
-                      Longs only when last week closed at or above its CPR, shorts only at or below it.
+                <div className="space-y-2 text-sm">
+                  <label className="flex items-start gap-2">
+                    <input type="checkbox" name="trend_analysis" className="mt-1" />
+                    <span>
+                      Full trend analysis
+                      <span className="block text-xs text-muted">
+                        Every setup must agree with: the 7 two-day CPR relationships (Higher longs; Overlapping Higher longs, shorts only on 2+ patterns; Unchanged by the open; Outside both; Inside the first 15-minute break), flipped when the open rejects them; the S1/R1 floor-pivot trend; and the weekly trend. Replaces the weekly filter.
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                  <label className="flex items-start gap-2">
+                    <input type="checkbox" name="clear_trend" className="mt-1" />
+                    <span>
+                      Clear trend only
+                      <span className="block text-xs text-muted">
+                        Trend setups (breakaway, CPR pull-back, Person plan, floor pivot, H4/L4 breakout) trade only when the S1/R1 trend, the day&apos;s relationship side and the weekly trend all agree. The market trends only about 30% of the time.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2">
+                    <input type="checkbox" name="weekly_filter" defaultChecked className="mt-1" />
+                    <span>
+                      Weekly trend filter
+                      <span className="block text-xs text-muted">
+                        Longs only when last week closed at or above its CPR, shorts only at or below it. Ignored with full trend analysis.
+                      </span>
+                    </span>
+                  </label>
+                </div>
               ) : (
                 <Field label="Entry zones (MTZ)" hint="Entries come from these zones; the target can be any other MTZ, daily or weekly.">
                   <Select name="mtz" defaultValue="both">

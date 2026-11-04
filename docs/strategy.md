@@ -126,7 +126,7 @@ These are implementation choices, not owner instructions. Each is easy to change
 Execution (fill price, slippage, same-candle stop and target, the EMA trail exit, end-of-day exit)
 belongs to the backtesting engine.
 
-Versions 1.0.0, 2.0.0 and 3.0.0 stay saved with their results, but they can no longer be rerun because
+Versions 1.0.0 to 4.0.0 stay saved with their results, but they can no longer be rerun because
 the strategy code has changed. Backtests made under 2.0.0 have no threshold, direction or ADR
 options stored, and ran with the script's thresholds and neither rule.
 

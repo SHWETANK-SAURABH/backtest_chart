@@ -8,16 +8,19 @@ from app.strategy.periods import Period
 
 STRATEGY_NAME = "MTZ Reversal"
 # Bump when strategy behaviour changes. The code hash also changes with any source edit.
-IMPLEMENTATION_VERSION = "4.0.0"
+IMPLEMENTATION_VERSION = "5.0.0"
 PATTERNS = ("OR", "DR", "ER", "WR")
 # Pivot Boss setups, in the order they are checked when several fire on one candle.
 BOOK_SETUPS = (
     "BREAKAWAY",
     "MAGNET",
+    "TREND_CHANGE",
     "CPR_PULLBACK",
     "CPR_FADE",
+    "PERSON_PLAN",
     "FLOOR_PIVOT",
     "CAM_REVERSAL",
+    "CAM_PATTERN",
     "CAM_BREAKOUT",
 )
 # The script's CPR width histogram bounds, in percent: Trending, Possible Trending, Sideways.
@@ -41,6 +44,8 @@ class StrategyParameters(BaseModel):
     strategy: str = "mtz_reversal"
     book_setups: tuple[str, ...] = BOOK_SETUPS
     weekly_filter: bool = True
+    trend_analysis: bool = False
+    clear_trend: bool = False
 
 
 class StrategyKind(StrEnum):
@@ -77,6 +82,10 @@ class StrategyOptions(BaseModel):
     # Pivot Boss only: which setups may enter, and trading only with the weekly bias.
     book_setups: tuple[str, ...] = BOOK_SETUPS
     weekly_filter: bool = True
+    # Pivot Boss only: the 7 relationships, the S1/R1 trend and the weekly trend gate every setup.
+    trend_analysis: bool = False
+    # Pivot Boss only: trend setups need the S1/R1, day and weekly trends all on their side.
+    clear_trend: bool = False
 
     @field_validator("entry_patterns")
     @classmethod
@@ -117,5 +126,7 @@ class StrategyOptions(BaseModel):
                 "strategy": self.strategy.value,
                 "book_setups": self.book_setups,
                 "weekly_filter": self.weekly_filter,
+                "trend_analysis": self.trend_analysis,
+                "clear_trend": self.clear_trend,
             }
         )

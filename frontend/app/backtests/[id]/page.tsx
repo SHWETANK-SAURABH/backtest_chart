@@ -38,8 +38,11 @@ const PATTERN_NAMES: Record<string, string> = {
   MAGNET: "Magnet (gap fill)",
   CPR_PULLBACK: "CPR pull-back",
   CPR_FADE: "CPR fade (rejected open)",
+  TREND_CHANGE: "Trend change after a strong day",
+  PERSON_PLAN: "John Person's trend plan",
   FLOOR_PIVOT: "Floor pivot, trend filtered",
   CAM_REVERSAL: "Camarilla H3/L3 reversal",
+  CAM_PATTERN: "Camarilla reversal pattern",
   CAM_BREAKOUT: "Camarilla H4/L4 breakout",
 };
 

@@ -130,10 +130,13 @@ export type StrategyKind = "mtz_reversal" | "pivot_boss";
 export type BookSetup =
   | "BREAKAWAY"
   | "MAGNET"
+  | "TREND_CHANGE"
   | "CPR_PULLBACK"
   | "CPR_FADE"
+  | "PERSON_PLAN"
   | "FLOOR_PIVOT"
   | "CAM_REVERSAL"
+  | "CAM_PATTERN"
   | "CAM_BREAKOUT";
 
 /** Empty for backtests made before options existed: all patterns, both MTZs. The later options are
@@ -147,6 +150,8 @@ export interface StrategyOptions {
   strategy?: StrategyKind;
   book_setups?: BookSetup[];
   weekly_filter?: boolean;
+  trend_analysis?: boolean;
+  clear_trend?: boolean;
 }
 
 export interface BacktestListItem extends Backtest {

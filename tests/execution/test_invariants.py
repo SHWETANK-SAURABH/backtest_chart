@@ -29,9 +29,13 @@ SETTINGS = {
         RiskSettings(max_trades_per_day=2, max_daily_loss_points=40),
     ),
     "pivot_boss": (ExecutionSettings(method=ExecutionMethod.NEXT_OPEN), RiskSettings()),
+    "pivot_boss_trend": (ExecutionSettings(method=ExecutionMethod.NEXT_OPEN), RiskSettings()),
 }
 PARAMETERS = {
     "pivot_boss": StrategyOptions(strategy="pivot_boss").apply(StrategyParameters()),
+    "pivot_boss_trend": StrategyOptions(
+        strategy="pivot_boss", trend_analysis=True, clear_trend=True
+    ).apply(StrategyParameters()),
 }
 
 
