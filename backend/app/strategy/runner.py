@@ -11,6 +11,7 @@ import polars as pl
 from app.data.calendar import nse
 from app.domain.candle import EXCHANGE_TZ
 from app.strategy.engine import Decision, MtzReversalStrategy, SessionInfo
+from app.strategy.hot_zone_scalp import HotZoneScalpStrategy
 from app.strategy.levels import PeriodBar
 from app.strategy.parameters import StrategyKind, StrategyParameters
 from app.strategy.pivot_boss import PivotBossStrategy
@@ -58,11 +59,11 @@ def iter_evaluations(
     final bar. A bar is flagged final when it closes at the scheduled session close.
     """
     chosen = parameters or StrategyParameters()
-    strategy = (
-        PivotBossStrategy(chosen, bar)
-        if chosen.strategy == StrategyKind.PIVOT_BOSS
-        else MtzReversalStrategy(chosen, bar)
-    )
+    kinds: dict[str, type[MtzReversalStrategy]] = {
+        StrategyKind.PIVOT_BOSS: PivotBossStrategy,
+        StrategyKind.HOT_ZONE: HotZoneScalpStrategy,
+    }
+    strategy = kinds.get(chosen.strategy, MtzReversalStrategy)(chosen, bar)
     daily_rows = {
         row["trading_date"]: row for row in daily.sort("trading_date").iter_rows(named=True)
     }

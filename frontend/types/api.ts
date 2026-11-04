@@ -126,7 +126,8 @@ export interface Backtest {
 
 export type Pattern = "OR" | "DR" | "ER" | "WR";
 export type MtzChoice = "daily" | "weekly" | "both";
-export type StrategyKind = "mtz_reversal" | "pivot_boss";
+export type StrategyKind = "mtz_reversal" | "pivot_boss" | "hot_zone";
+export type ZoneType = "MTF" | "GPZ" | "DPZ" | "MTF_STAR" | "PP_CC";
 export type BookSetup =
   | "BREAKAWAY"
   | "MAGNET"
@@ -152,6 +153,9 @@ export interface StrategyOptions {
   weekly_filter?: boolean;
   trend_analysis?: boolean;
   clear_trend?: boolean;
+  hz_types?: ZoneType[];
+  hz_min_score?: number;
+  hz_panel_gate?: boolean;
 }
 
 export interface BacktestListItem extends Backtest {

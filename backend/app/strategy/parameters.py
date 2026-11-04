@@ -8,7 +8,7 @@ from app.strategy.periods import Period
 
 STRATEGY_NAME = "MTZ Reversal"
 # Bump when strategy behaviour changes. The code hash also changes with any source edit.
-IMPLEMENTATION_VERSION = "5.0.0"
+IMPLEMENTATION_VERSION = "6.0.0"
 PATTERNS = ("OR", "DR", "ER", "WR")
 # Pivot Boss setups, in the order they are checked when several fire on one candle.
 BOOK_SETUPS = (
@@ -23,6 +23,9 @@ BOOK_SETUPS = (
     "CAM_PATTERN",
     "CAM_BREAKOUT",
 )
+# Hot zone scalp (strategy4.txt) zone types, and the defaults chosen by the owner.
+HZ_TYPES = ("MTF", "GPZ", "DPZ", "MTF_STAR", "PP_CC")
+HZ_DEFAULT_TYPES = ("MTF", "GPZ")
 # The script's CPR width histogram bounds, in percent: Trending, Possible Trending, Sideways.
 CPR_THRESHOLDS = (0.25, 0.50, 0.75)
 
@@ -46,11 +49,15 @@ class StrategyParameters(BaseModel):
     weekly_filter: bool = True
     trend_analysis: bool = False
     clear_trend: bool = False
+    hz_types: tuple[str, ...] = HZ_DEFAULT_TYPES
+    hz_min_score: int = Field(2, ge=2, le=4)
+    hz_panel_gate: bool = False
 
 
 class StrategyKind(StrEnum):
     MTZ_REVERSAL = "mtz_reversal"
     PIVOT_BOSS = "pivot_boss"
+    HOT_ZONE = "hot_zone"
 
 
 class MtzChoice(StrEnum):
@@ -86,6 +93,11 @@ class StrategyOptions(BaseModel):
     trend_analysis: bool = False
     # Pivot Boss only: trend setups need the S1/R1, day and weekly trends all on their side.
     clear_trend: bool = False
+    # Hot zone scalp only: which zones trade, the MTF confluence minimum score, and whether the
+    # trade direction panel must also allow the side.
+    hz_types: tuple[str, ...] = HZ_DEFAULT_TYPES
+    hz_min_score: int = Field(2, ge=2, le=4)
+    hz_panel_gate: bool = False
 
     @field_validator("entry_patterns")
     @classmethod
@@ -108,6 +120,16 @@ class StrategyOptions(BaseModel):
             raise ValueError("Choose at least one setup")
         return tuple(s for s in BOOK_SETUPS if s in value)
 
+    @field_validator("hz_types")
+    @classmethod
+    def check_zone_types(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        unknown = set(value) - set(HZ_TYPES)
+        if unknown:
+            raise ValueError(f"Unknown zone types: {', '.join(sorted(unknown))}")
+        if not value:
+            raise ValueError("Choose at least one zone type")
+        return tuple(t for t in HZ_TYPES if t in value)
+
     @field_validator("cpr_thresholds")
     @classmethod
     def check_thresholds(cls, value: tuple[float, float, float]) -> tuple[float, float, float]:
@@ -128,5 +150,8 @@ class StrategyOptions(BaseModel):
                 "weekly_filter": self.weekly_filter,
                 "trend_analysis": self.trend_analysis,
                 "clear_trend": self.clear_trend,
+                "hz_types": self.hz_types,
+                "hz_min_score": self.hz_min_score,
+                "hz_panel_gate": self.hz_panel_gate,
             }
         )

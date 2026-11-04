@@ -30,9 +30,11 @@ SETTINGS = {
     ),
     "pivot_boss": (ExecutionSettings(method=ExecutionMethod.NEXT_OPEN), RiskSettings()),
     "pivot_boss_trend": (ExecutionSettings(method=ExecutionMethod.NEXT_OPEN), RiskSettings()),
+    "hot_zone": (ExecutionSettings(method=ExecutionMethod.NEXT_OPEN), RiskSettings()),
 }
 PARAMETERS = {
     "pivot_boss": StrategyOptions(strategy="pivot_boss").apply(StrategyParameters()),
+    "hot_zone": StrategyOptions(strategy="hot_zone").apply(StrategyParameters()),
     "pivot_boss_trend": StrategyOptions(
         strategy="pivot_boss", trend_analysis=True, clear_trend=True
     ).apply(StrategyParameters()),

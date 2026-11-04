@@ -1,4 +1,4 @@
-import type { Backtest, BookSetup } from "@/types/api";
+import type { Backtest, BookSetup, ZoneType } from "@/types/api";
 
 const IST = "Asia/Kolkata";
 
@@ -55,6 +55,14 @@ export function bytes(size: number | null | undefined): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+export const ZONE_TYPE_NAMES: Record<ZoneType, string> = {
+  MTF: "MTF confluence",
+  GPZ: "Golden Pivot Zone",
+  DPZ: "Double Pivot Zone",
+  MTF_STAR: "MTF star",
+  PP_CC: "PP/CC",
+};
+
 export const BOOK_SETUP_NAMES: Record<BookSetup, string> = {
   BREAKAWAY: "Breakaway",
   MAGNET: "Magnet (gap fill)",
@@ -83,7 +91,14 @@ export function strategyOptions(backtest: Backtest): {
   const patterns = "entry_patterns" in options ? options.entry_patterns : null;
   const thresholds = "cpr_thresholds" in options && options.cpr_thresholds ? options.cpr_thresholds : [0.25, 0.5, 0.75];
   const book = "strategy" in options && options.strategy === "pivot_boss";
-  const rules = book
+  const hz = "strategy" in options && options.strategy === "hot_zone";
+  const zoneTypes = "hz_types" in options && options.hz_types ? options.hz_types : [];
+  const rules = hz
+    ? [
+        `MTF score ${"hz_min_score" in options ? options.hz_min_score : 2}+`,
+        "hz_panel_gate" in options && options.hz_panel_gate ? "panel gate" : "no panel gate",
+      ]
+    : book
     ? [
         "trend_analysis" in options && options.trend_analysis
           ? "full trend analysis"
@@ -98,10 +113,12 @@ export function strategyOptions(backtest: Backtest): {
   if (book && "clear_trend" in options && options.clear_trend) rules.push("clear trend only");
   const setups = "book_setups" in options && options.book_setups ? options.book_setups : [];
   return {
-    strategy: book ? "Pivot Boss (book)" : "MTZ reversal",
+    strategy: hz ? "Hot zone scalp" : book ? "Pivot Boss (book)" : "MTZ reversal",
     timeframe: backtest.timeframe === "15m" ? "15 min" : "5 min",
     patterns: !patterns || patterns.length === 4 ? "All patterns" : patterns.join(", "),
-    mtz: book
+    mtz: hz
+      ? zoneTypes.map((t) => ZONE_TYPE_NAMES[t]).join(", ")
+      : book
       ? setups.length === Object.keys(BOOK_SETUP_NAMES).length
         ? "all book setups"
         : setups.map((s) => BOOK_SETUP_NAMES[s]).join(", ")

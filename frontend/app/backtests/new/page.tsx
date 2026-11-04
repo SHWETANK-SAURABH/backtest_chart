@@ -6,7 +6,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, Select } from "@/components/ui";
 import { useApi } from "@/hooks/use-api";
 import { get, post } from "@/services/client";
-import { BOOK_SETUP_NAMES } from "@/lib/format";
+import { BOOK_SETUP_NAMES, ZONE_TYPE_NAMES } from "@/lib/format";
 import type {
   Backtest,
   BookSetup,
@@ -16,6 +16,7 @@ import type {
   StrategyDetail,
   StrategyKind,
   StrategyVersion,
+  ZoneType,
 } from "@/types/api";
 
 const PATTERNS: { code: Pattern; name: string }[] = [
@@ -38,6 +39,14 @@ const BOOK_SETUPS: { code: BookSetup; rule: string }[] = [
   { code: "CAM_BREAKOUT", rule: "After a failed test of H4/L4, the first close beyond it and beyond the test's high/low. Stop H3/L3. Target H5/L5." },
 ];
 
+const ZONE_TYPES: { code: ZoneType; rule: string }[] = [
+  { code: "MTF", rule: "A day level (PP, TC, BC, R1, R2, S1, S2, H3-H5, L3-L5) with levels of other timeframes nearby; score 1 + each timeframe that has one." },
+  { code: "GPZ", rule: "CPR TC/BC/PP near Camarilla H3 (bull) or L3 (bear), on the day, week or month." },
+  { code: "DPZ", rule: "R2 near H4 (bull) or S2 near L4 (bear)." },
+  { code: "MTF_STAR", rule: "The day's R1 near the week's or top timeframe's PP/TC (bull); S1 near PP/BC (bear)." },
+  { code: "PP_CC", rule: "A pivot near its Camarilla centre (always bull in the script)." },
+];
+
 export default function NewBacktestPage() {
   const router = useRouter();
   const strategies = useApi<Strategy[]>("/strategies");
@@ -49,6 +58,8 @@ export default function NewBacktestPage() {
   const [kind, setKind] = useState<StrategyKind>("mtz_reversal");
   const [setups, setSetups] = useState<BookSetup[]>(BOOK_SETUPS.map((s) => s.code));
   const book = kind === "pivot_boss";
+  const hz = kind === "hot_zone";
+  const [zoneTypes, setZoneTypes] = useState<ZoneType[]>(["MTF", "GPZ"]);
 
   useEffect(() => {
     if (!strategies.data) return;
@@ -85,12 +96,15 @@ export default function NewBacktestPage() {
           weekly_filter: form.get("weekly_filter") === "on",
           trend_analysis: form.get("trend_analysis") === "on",
           clear_trend: form.get("clear_trend") === "on",
+          hz_types: zoneTypes,
+          hz_min_score: Number(form.get("hz_min_score") ?? 2),
+          hz_panel_gate: form.get("hz_panel_gate") === "on",
           entry_patterns: patterns,
           mtz: form.get("mtz") ?? "both",
           cpr_thresholds: ["cpr_trending", "cpr_possible", "cpr_sideways"].map((name) => Number(form.get(name))),
-          // Only the MTZ reversal reads these; the defaults are sent for the book strategy.
-          day_direction: book || form.get("day_direction") === "on",
-          adr_trade: book || form.get("adr_trade") === "on",
+          // Only the MTZ reversal reads these; the defaults are sent for the other strategies.
+          day_direction: book || hz || form.get("day_direction") === "on",
+          adr_trade: book || hz || form.get("adr_trade") === "on",
         },
         execution: { method: form.get("method"), slippage_points: Number(form.get("slippage_points") || 0) },
         risk: { max_trades_per_day: optional("max_trades_per_day"), max_daily_loss_points: optional("max_daily_loss_points") },
@@ -144,11 +158,12 @@ export default function NewBacktestPage() {
               <Select value={kind} onChange={(e) => setKind(e.target.value as StrategyKind)}>
                 <option value="mtz_reversal">MTZ reversal (current)</option>
                 <option value="pivot_boss">Pivot Boss (book)</option>
+                <option value="hot_zone">Hot zone scalp (strategy4)</option>
               </Select>
             </Field>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <fieldset className="text-sm">
-                <legend className="mb-1 text-ink-2">{book ? "Reversal candle triggers" : "Entry patterns"}</legend>
+                <legend className="mb-1 text-ink-2">{book || hz ? "Reversal candle triggers" : "Entry patterns"}</legend>
                 <div className="grid grid-cols-2 gap-1">
                   {PATTERNS.map((p) => (
                     <label key={p.code} className="flex items-center gap-2">
@@ -197,6 +212,25 @@ export default function NewBacktestPage() {
                     </span>
                   </label>
                 </div>
+              ) : hz ? (
+                <div className="space-y-2 text-sm">
+                  <Field label="MTF confluence minimum score" hint="1 for the day plus 1 per other timeframe with a level nearby">
+                    <Select name="hz_min_score" defaultValue="2">
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                    </Select>
+                  </Field>
+                  <label className="flex items-start gap-2">
+                    <input type="checkbox" name="hz_panel_gate" className="mt-1" />
+                    <span>
+                      Trade direction panel gate
+                      <span className="block text-xs text-muted">
+                        Enter only when the panel allows the side from structure, a gap beyond R1/S1 or an open beyond the prior high/low (not from the zone itself).
+                      </span>
+                    </span>
+                  </label>
+                </div>
               ) : (
                 <Field label="Entry zones (MTZ)" hint="Entries come from these zones; the target can be any other MTZ, daily or weekly.">
                   <Select name="mtz" defaultValue="both">
@@ -207,6 +241,32 @@ export default function NewBacktestPage() {
                 </Field>
               )}
             </div>
+            {hz && (
+              <fieldset className="mt-4 text-sm">
+                <legend className="mb-1 text-ink-2">Hot zone types</legend>
+                <div className="space-y-2">
+                  {ZONE_TYPES.map((z) => (
+                    <label key={z.code} className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={zoneTypes.includes(z.code)}
+                        onChange={(e) =>
+                          setZoneTypes((current) =>
+                            e.target.checked ? [...current, z.code] : current.filter((c) => c !== z.code),
+                          )
+                        }
+                      />
+                      <span>
+                        {ZONE_TYPE_NAMES[z.code]}
+                        <span className="block text-xs text-muted">{z.rule}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {zoneTypes.length === 0 && <p className="mt-1 text-xs text-critical">Choose at least one zone type.</p>}
+              </fieldset>
+            )}
             {book && (
               <fieldset className="mt-4 text-sm">
                 <legend className="mb-1 text-ink-2">Book setups</legend>
@@ -248,7 +308,7 @@ export default function NewBacktestPage() {
               </div>
               <p className="mt-1 text-xs text-muted">The script&apos;s values are 0.25, 0.50 and 0.75. Each must be above the one before.</p>
             </fieldset>
-            <div className={book ? "hidden" : "mt-4 space-y-2 text-sm"}>
+            <div className={book || hz ? "hidden" : "mt-4 space-y-2 text-sm"}>
               <label className="flex items-start gap-2">
                 <input type="checkbox" name="day_direction" defaultChecked className="mt-1" />
                 <span>
@@ -268,7 +328,13 @@ export default function NewBacktestPage() {
                 </span>
               </label>
             </div>
-            {book ? (
+            {hz ? (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted">
+                <li>As strategy4.txt: the zone nearest the close sets the side (bull zone long, bear zone short), however far away it is.</li>
+                <li>Entry on a chosen reversal candle in that direction. Stop: the signal candle. Target: the next daily CPR or Camarilla (H3-H6, L3-L6) level beyond the close.</li>
+                <li>Zone tolerance is the strategy&apos;s 0.25%. Open trades exit at the session&apos;s close.</li>
+              </ul>
+            ) : book ? (
               <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted">
                 <li>Daily bias: yesterday&apos;s close against its own CPR. Narrow days are Trending and Possible Trending by the thresholds above.</li>
                 <li>Setups are checked in the order listed; the first valid one enters. A setup is skipped when price is already beyond its stop or target.</li>
@@ -311,7 +377,7 @@ export default function NewBacktestPage() {
             </div>
           </Card>
 
-          <Button type="submit" disabled={submitting || !intraday || !daily || versions.length === 0 || patterns.length === 0 || (book && setups.length === 0)}>
+          <Button type="submit" disabled={submitting || !intraday || !daily || versions.length === 0 || patterns.length === 0 || (book && setups.length === 0) || (hz && zoneTypes.length === 0)}>
             {submitting ? "Starting…" : "Run backtest"}
           </Button>
         </form>

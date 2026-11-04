@@ -377,6 +377,9 @@ def test_create_backtest_records_options_and_lists_results(
         "weekly_filter": True,
         "trend_analysis": False,
         "clear_trend": False,
+        "hz_types": ["MTF", "GPZ"],
+        "hz_min_score": 2,
+        "hz_panel_gate": False,
         "entry_patterns": ["OR", "WR"],
         "mtz": "weekly",
         "cpr_thresholds": [0.1, 0.2, 0.3],
@@ -404,6 +407,8 @@ def test_create_backtest_records_options_and_lists_results(
         {"strategy_options": {"cpr_thresholds": [0.5, 0.25, 0.75]}},
         {"strategy_options": {"strategy": "other"}},
         {"strategy_options": {"book_setups": []}},
+        {"strategy_options": {"hz_types": []}},
+        {"strategy_options": {"hz_min_score": 1}},
     ],
 )
 def test_invalid_options_are_refused(client: TestClient, setup: dict, changes: dict) -> None:

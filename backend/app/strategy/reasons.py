@@ -23,6 +23,11 @@ BOOK_SETUP_NAMES = {
     "CAM_REVERSAL": "Camarilla H3/L3 reversal",
     "CAM_PATTERN": "Camarilla reversal pattern",
     "CAM_BREAKOUT": "Camarilla H4/L4 breakout",
+    "HZ_MTF": "Hot zone scalp at an MTF confluence zone",
+    "HZ_GPZ": "Hot zone scalp at a Golden Pivot Zone",
+    "HZ_DPZ": "Hot zone scalp at a Double Pivot Zone",
+    "HZ_MTF_STAR": "Hot zone scalp at an MTF star zone",
+    "HZ_PP_CC": "Hot zone scalp at a PP/CC zone",
 }
 
 MESSAGES = {
@@ -51,6 +56,10 @@ MESSAGES = {
     "ADR_LONG": "ADR trade: long against the move down that completed the ADR.",
     "ADR_SHORT": "ADR trade: short against the move up that completed the ADR.",
     "NO_LEVELS": "No CPR or Camarilla levels yet: not enough completed daily history.",
+    "NO_HOT_ZONE": "No hot zone of a chosen type today.",
+    "SIGNAL_AGAINST_ZONE": "A reversal candle confirmed against the nearest hot zone's direction.",
+    "PANEL_BLOCKS_DIRECTION": "The trade direction panel does not allow this side.",
+    "NO_TARGET_LEVEL": "No pivot level lies beyond the close to target.",
     "NO_BOOK_SETUP": "No Pivot Boss setup on this candle.",
     "AGAINST_WEEKLY_BIAS": "A setup fired against the weekly bias.",
     "NO_ROOM_TO_TARGET": "A setup fired, but price is already at or beyond its target.",
